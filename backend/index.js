@@ -12,7 +12,7 @@ import scheduleDailyReminder from "./cron/dailyReminder.js";
 import notificationRoute from "./routes/notificationRoute.js";
 
 const app = Express();
-const port = process.env.PORT|| 4000;
+const port = process.env.PORT|| 8080;
 
 app.use(cors());
 app.use(cookieParser());
@@ -30,6 +30,8 @@ db.sync().then(() => {
 }).catch((error) => {
     console.error("Error syncing database:", error);
 });
+console.log("PORT:", process.env.PORT);
+
 
 app.use('/', (req, res) => {
     res.send('Hello World!');
