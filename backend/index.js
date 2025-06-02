@@ -12,7 +12,7 @@ import scheduleDailyReminder from "./cron/dailyReminder.js";
 import notificationRoute from "./routes/notificationRoute.js";
 
 const app = Express();
-const port = process.env.PORT || 5000;
+const port = process.env.PORT;
 
 app.use(cors());
 app.use(cookieParser());
@@ -23,13 +23,13 @@ app.use("/api/auth", authRoute);
 app.use("/api/activity", activityRoute);
 app.use("/api/activity-segments", activitySegmentsRoute);
 app.use("/api/notif",  notificationRoute);
-// scheduleDailyReminder(); 
-// db.sync().then(() => {
-//     console.log("Database synced");
-//     console.log("table created");
-// }).catch((error) => {
-//     console.error("Error syncing database:", error);
-// });
+scheduleDailyReminder(); 
+db.sync().then(() => {
+    console.log("Database synced");
+    console.log("table created");
+}).catch((error) => {
+    console.error("Error syncing database:", error);
+});
 
 app.use('/', (req, res) => {
     res.send('Hello World!');
