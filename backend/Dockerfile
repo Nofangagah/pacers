@@ -1,16 +1,6 @@
 FROM node:20-alpine
-
 WORKDIR /app
-
-
-COPY package*.json ./
-RUN npm install
-
-
 COPY . .
-
-
+RUN npm install
 EXPOSE 8080
-
-# Jalankan aplikasi
-CMD ["npm", "start"]
+CMD ["node", "index.js"]
