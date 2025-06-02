@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "838337933912",
+    "project_id": "pacer-32453",
+    "storage_bucket": "pacer-32453.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:838337933912:android:bfa3b492d7d19e58a4902d",
+        "android_client_info": {
+          "package_name": "com.example.pacer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA9AAgHjaXPFNtnIcyF1OQJdZC7gwiFVoo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
