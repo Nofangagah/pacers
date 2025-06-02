@@ -6,13 +6,14 @@ steps:
   - name: "gcr.io/cloud-builders/gsutil"
     args: ["cp", "${_ENV}", "backend/.env"]
 # Step 2: Build image dari folder backend
-- name: "gcr.io/cloud-builders/docker"
-  args: [
-    "build",
-    "-t", "gcr.io/$PROJECT_ID/pacer",
-    "-f", "backend/Dockerfile",
-    "backend"
-  ]
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      [
+        "build",
+        "-t", "gcr.io/$PROJECT_ID/pacer",
+        "-f", "backend/Dockerfile",
+        "backend"
+      ]
 
   # Step 3: Push image ke Container Registry
   - name: "gcr.io/cloud-builders/docker"
