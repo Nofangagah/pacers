@@ -2,9 +2,19 @@ substitutions:
   _ENV: gs://h-07-450914_cloudbuild/pacer/.env
 
 steps:
+  # Debug Step: Cek struktur folder awal
+  - name: "gcr.io/cloud-builders/gcloud"
+    entrypoint: "bash"
+    args: ["-c", "echo '[DEBUG] Folder awal:' && pwd && ls -R"]
+
   # Step 1: Mengambil file .env dari Cloud Storage
   - name: "gcr.io/cloud-builders/gsutil"
     args: ["cp", "${_ENV}", "backend/.env"]
+
+  # Debug Step: Cek apakah .env berhasil didownload
+  - name: "gcr.io/cloud-builders/gcloud"
+    entrypoint: "bash"
+    args: ["-c", "echo '[DEBUG] Cek backend/.env' && ls -lah backend && cat backend/.env || echo '[.env tidak ditemukan]'"]
 
   # Step 2: Build image dari folder backend
   - name: "gcr.io/cloud-builders/docker"
