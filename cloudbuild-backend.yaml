@@ -22,7 +22,7 @@ steps:
         "run", "deploy", "pacer",
         "--image", "gcr.io/$PROJECT_ID/pacer",
         "--timeout", "1000s",
-        "--port", "5000",
+        "--port", "8080",
         "--region", "us-central1",
         "--allow-unauthenticated"
       ]
