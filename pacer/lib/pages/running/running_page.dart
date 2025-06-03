@@ -22,6 +22,7 @@ class _RunningPageState extends State<RunningPage> {
   Timer? _timer;
   StreamSubscription<LocationData>? _locationSubscription;
   StreamSubscription<StepCount>? _stepCountSubscription;
+  late Stream<StepCount> _stepCountStream;
 
   int calories = 0;
   double avgPace = 0;
@@ -51,12 +52,13 @@ class _RunningPageState extends State<RunningPage> {
   void initState() {
     super.initState();
     _mapController = MapController();
+    _stepCountStream = Pedometer.stepCountStream.asBroadcastStream();
     _initializeLocation();
     _initializePedometer();
   }
 
   void _initializePedometer() {
-    _stepCountSubscription = Pedometer.stepCountStream.listen(
+    _stepCountSubscription = _stepCountStream.listen(
       (event) {
         if (_isRunning && _startStepsInitialized) {
           setState(() {
@@ -150,7 +152,7 @@ class _RunningPageState extends State<RunningPage> {
       _routePoints.add(_currentPosition!);
     }
 
-    Pedometer.stepCountStream.first.then((value) {
+    _stepCountStream.first.then((value) {
       setState(() {
         _startSteps = value.steps;
         _startStepsInitialized = true;

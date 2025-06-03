@@ -12,7 +12,7 @@ class AuthService {
         '130852023885-of55f25df0dg92o435fl90039mt773fk.apps.googleusercontent.com',
   );
 
-  static const baseUrl = 'http://192.168.100.32:3000/api/auth';
+  static const baseUrl = 'https://pacer-130852023885.us-central1.run.app/api/auth';
 
   /// Login dengan Google
   static Future<Map<String, dynamic>> signInWithGoogle() async {

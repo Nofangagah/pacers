@@ -4,7 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacer/service/auth_service.dart';
 
 class UserService {
-  static const baseUrl = 'http://192.168.100.32:3000/api';
+  static const baseUrl = 'https://pacer-130852023885.us-central1.run.app/api';
 
   static Future<bool> updateProfile(int userId, Map<String, dynamic> updates) async {
   final prefs = await SharedPreferences.getInstance();

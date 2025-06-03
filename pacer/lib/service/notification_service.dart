@@ -41,7 +41,7 @@ class NotificationService {
 
     if (token != null &&  accessToken != null) {
       await http.patch(
-        Uri.parse('http://192.168.100.32:3000/api/user/deviceTokenUpdate/$userId'),
+        Uri.parse('https://pacer-130852023885.us-central1.run.app/api/user/deviceTokenUpdate/$userId'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $accessToken',
