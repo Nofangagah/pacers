@@ -1,6 +1,6 @@
 substitutions:
   _ENV: gs://h-07-450914_cloudbuild/pacer/.env
-  _FIREBASE: gs://h-07-450914_cloudbuild/pacer/pacer-32453-firebase-adminsdk-fbsvc-2616f3fef2.json
+  _FIREBASE: gs://h-07-450914_cloudbuild/pacer/pacer.json
 
 steps:
   # Step 1: Ambil file .env
@@ -9,7 +9,7 @@ steps:
 
   # Step 2: Ambil file firebase credentials
   - name: "gcr.io/cloud-builders/gsutil"
-    args: ["cp", "${_FIREBASE}", "backend/pacer-32453-firebase-adminsdk-fbsvc-2616f3fef2.json"]
+    args: ["cp", "${_FIREBASE}", "backend/pacerjson"]
 
   # Opsional: cek isi .env
   - name: 'ubuntu'

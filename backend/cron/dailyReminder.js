@@ -29,7 +29,7 @@ const sendReminders = async (title, message) => {
 
 const scheduleDailyReminder = () => {
   cron.schedule(
-  '*/5 * * * *', // setiap 5 menit
+  '*/1 * * * *', // setiap 5 menit
   () => {
     sendReminders(
       'Notifikasi rutin tiap 5 menit',

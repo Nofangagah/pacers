@@ -56,7 +56,6 @@ class _RunningPageState extends State<RunningPage> {
 
   final double _userWeightKg = 60.0;
   final prefs = SharedPreferences.getInstance();
-  
 
   bool _isSimulating = false;
   Timer? _simulationTimer;
@@ -85,153 +84,162 @@ class _RunningPageState extends State<RunningPage> {
   }
 
   Future<void> _initializeLocation() async {
-  // Cek dan minta akses lokasi
-  bool serviceEnabled = await _location.serviceEnabled();
-  if (!serviceEnabled) {
-    serviceEnabled = await _location.requestService();
+    // Cek dan minta akses lokasi
+    bool serviceEnabled = await _location.serviceEnabled();
     if (!serviceEnabled) {
-      print("❌ Lokasi tidak diaktifkan.");
-      return;
-    }
-  }
-
-  PermissionStatus permissionGranted = await _location.hasPermission();
-  if (permissionGranted == PermissionStatus.denied) {
-    permissionGranted = await _location.requestPermission();
-    if (permissionGranted != PermissionStatus.granted) {
-      print("❌ Izin lokasi tidak diberikan.");
-      return;
-    }
-  }
-
-  // Atur agar lokasi update lebih sering
-  await _location.changeSettings(
-    interval: 1000, // update setiap 1 detik
-    distanceFilter: 1, // update jika pindah 1 meter
-  );
-
-  // Ambil lokasi awal
-  final locationData = await _location.getLocation();
-  if (locationData.latitude != null && locationData.longitude != null) {
-    final pos = LatLng(locationData.latitude!, locationData.longitude!);
-
-    setState(() {
-      _currentPosition = pos;
-    });
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _mapController.camera != null) {
-        _mapController.move(pos, 16);
+      serviceEnabled = await _location.requestService();
+      if (!serviceEnabled) {
+        print("❌ Lokasi tidak diaktifkan.");
+        return;
       }
-    });
+    }
 
-    print("📍 Lokasi awal: $_currentPosition");
-  }
+    PermissionStatus permissionGranted = await _location.hasPermission();
+    if (permissionGranted == PermissionStatus.denied) {
+      permissionGranted = await _location.requestPermission();
+      if (permissionGranted != PermissionStatus.granted) {
+        print("❌ Izin lokasi tidak diberikan.");
+        return;
+      }
+    }
 
-  // Dengarkan perubahan lokasi
-  _locationSubscription = _location.onLocationChanged.listen((locationData) {
-    if (_isSimulating) return;
+    // Atur agar lokasi update lebih sering
+    await _location.changeSettings(
+      interval: 1000, // update setiap 1 detik
+      distanceFilter: 0.1, // update jika pindah 0.1 meter (10cm)
+    );
 
-    final newLat = locationData.latitude;
-    final newLng = locationData.longitude;
-
-    if (newLat == null || newLng == null) return;
-
-    final newPosition = LatLng(newLat, newLng);
-
-    final movedEnough = _currentPosition == null ||
-        Distance().as(LengthUnit.Meter, _currentPosition!, newPosition) > 1;
-
-    if (movedEnough) {
-      print("📡 Lokasi berubah: $newPosition");
+    // Ambil lokasi awal
+    final locationData = await _location.getLocation();
+    if (locationData.latitude != null && locationData.longitude != null) {
+      final pos = LatLng(locationData.latitude!, locationData.longitude!);
 
       setState(() {
-        _currentPosition = newPosition;
-        _mapController.move(newPosition, _mapController.camera.zoom);
+        _currentPosition = pos;
+      });
 
-        if (_isRunning) {
-          if (_routePoints.isNotEmpty) {
-            final lastPoint = _routePoints.last;
-            final distance = Distance().as(
-              LengthUnit.Kilometer,
-              lastPoint,
-              newPosition,
-            );
-            _totalDistance += distance;
-          }
-          _routePoints.add(newPosition);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _mapController.camera != null) {
+          _mapController.move(pos, 16);
         }
       });
+
+      print("📍 Lokasi awal: $_currentPosition");
     }
-  });
-}
 
+    // Dengarkan perubahan lokasi
+    _locationSubscription = _location.onLocationChanged.listen((locationData) {
+      if (_isSimulating) return;
 
+      final newLat = locationData.latitude;
+      final newLng = locationData.longitude;
 
-void _startSimulation() {
-  if (_currentPosition == null) return;
+      if (newLat == null || newLng == null) return;
 
-  const int stepsPerSecond = 3;
-  const int tickSeconds = 2;
-  final int stepsPerTick = stepsPerSecond * tickSeconds; // 6 langkah per tick
-  const double stepLengthMeters = 1.2; // panjang langkah lari
+      final newPosition = LatLng(newLat, newLng);
 
-  _simulationTimer = Timer.periodic(Duration(seconds: tickSeconds), (_) {
-    if (!_isRunning) return;
+      final movedEnough = _currentPosition == null ||
+          Distance().as(LengthUnit.Meter, _currentPosition!, newPosition) > 0.1;
 
-    _stopwatch.elapsed;  // just to keep it running
+      if (movedEnough) {
+        print("📡 Lokasi berubah: $newPosition");
 
-    setState(() {
-      steps += stepsPerTick;
+        setState(() {
+          _currentPosition = newPosition;
+          _mapController.move(newPosition, _mapController.camera.zoom);
 
-      double distanceKm = (stepsPerTick * stepLengthMeters) / 1000;
-
-      double deltaLat = distanceKm / 111.32;
-      double deltaLng = distanceKm / (111.32 * 
-        (cos(_currentPosition!.latitude * (pi / 180))));
-
-      _currentPosition = LatLng(
-        _currentPosition!.latitude + deltaLat,
-        _currentPosition!.longitude + deltaLng,
-      );
-
-      _mapController.move(_currentPosition!, _mapController.camera.zoom);
-
-      if (_routePoints.isNotEmpty) {
-        final lastPoint = _routePoints.last;
-        final distance = Distance().as(
-          LengthUnit.Kilometer,
-          lastPoint,
-          _currentPosition!,
-        );
-        _totalDistance += distance;
+          if (_isRunning) {
+            if (_routePoints.isNotEmpty) {
+              final lastPoint = _routePoints.last;
+              final distance = Distance().as(
+                LengthUnit.Kilometer,
+                lastPoint,
+                newPosition,
+              );
+              _totalDistance += distance;
+            }
+            _routePoints.add(newPosition);
+          }
+        });
       }
-
-      _routePoints.add(_currentPosition!);
-
-      // Pace update here, using stopwatch elapsed time in minutes
-      final durationInMinutes = _stopwatch.elapsed.inSeconds / 60;
-      if (_totalDistance > 0 && durationInMinutes > 0) {
-        avgPace = durationInMinutes / _totalDistance;
-      } else {
-        avgPace = 0;
-      }
-
-      // Calories update (optional)
-      final durationInHours = _stopwatch.elapsed.inSeconds / 3600;
-      final met = _metRates[_selectedActivity] ?? 0.0;
-      calories = (met * _userWeightKg * durationInHours).round();
-
-      // Print for debugging
-      print("Steps: $steps");
-      print("Distance: ${_totalDistance.toStringAsFixed(3)} km");
-      print("Avg Pace: ${avgPace.toStringAsFixed(2)} min/km");
-      print("Calories: $calories");
     });
-  });
-}
+  }
 
+  void _startSimulation() {
+    if (_currentPosition == null) return;
 
+    const int stepsPerSecond = 3;
+    const int tickSeconds = 2;
+    final int stepsPerTick = stepsPerSecond * tickSeconds; // 6 langkah per tick
+    final double stepLengthMeters = _getStepLength(); // kalibrasi panjang langkah
+
+    _simulationTimer = Timer.periodic(Duration(seconds: tickSeconds), (_) {
+      if (!_isRunning) return;
+
+      _stopwatch.elapsed; // just to keep it running
+
+      setState(() {
+        steps += stepsPerTick;
+
+        double distanceKm = (stepsPerTick * stepLengthMeters) / 1000;
+
+        double deltaLat = distanceKm / 111.32;
+        double deltaLng = distanceKm /
+            (111.32 * cos(_currentPosition!.latitude * (pi / 180)));
+
+        _currentPosition = LatLng(
+          _currentPosition!.latitude + deltaLat,
+          _currentPosition!.longitude + deltaLng,
+        );
+
+        _mapController.move(_currentPosition!, _mapController.camera.zoom);
+
+        if (_routePoints.isNotEmpty) {
+          final lastPoint = _routePoints.last;
+          final distance = Distance().as(
+            LengthUnit.Kilometer,
+            lastPoint,
+            _currentPosition!,
+          );
+          _totalDistance += distance;
+        }
+
+        _routePoints.add(_currentPosition!);
+
+        // Perhitungan pace
+        if (_stopwatch.elapsed.inSeconds > 0 && _totalDistance > 0) {
+          final paceInSecondsPerKm =
+              _stopwatch.elapsed.inSeconds / _totalDistance;
+          avgPace = paceInSecondsPerKm / 60;
+        } else {
+          avgPace = 0;
+        }
+
+        // Perhitungan kalori
+        final durationInHours = _stopwatch.elapsed.inSeconds / 3600;
+        final met = _metRates[_selectedActivity] ?? 0.0;
+        calories = (met * _userWeightKg * durationInHours).round();
+
+        // Print untuk debugging
+        print("Steps: $steps");
+        print("Distance: ${_totalDistance.toStringAsFixed(3)} km");
+        print("Avg Pace: ${avgPace.toStringAsFixed(2)} min/km");
+        print("Calories: $calories");
+      });
+    });
+  }
+
+  double _getStepLength() {
+    switch (_selectedActivity) {
+      case ActivityType.lari:
+        return 1.2; // meter per langkah untuk lari
+      case ActivityType.sepeda:
+        return 3.0; // meter per langkah untuk sepeda
+      case ActivityType.jalan:
+      default:
+        return 0.7; // meter per langkah untuk jalan
+    }
+  }
 
   void _stopSimulation() {
     _simulationTimer?.cancel();
@@ -257,25 +265,39 @@ void _startSimulation() {
     }
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || !_isRunning) return;
+
       setState(() {
         final durationInSeconds = _stopwatch.elapsed.inSeconds;
-        final durationInMinutes = durationInSeconds / 60;
         final durationInHours = durationInSeconds / 3600;
 
-        final isMoving = steps > 0 || _totalDistance > 0.01;
-        if (isMoving) {
-          final met = _metRates[_selectedActivity] ?? 0.0;
-          calories = (met * _userWeightKg * durationInHours).round();
-        }
+        // Hitung jarak alternatif dari langkah jika GPS kurang akurat
+        final double stepLength = _getStepLength();
+        final double stepDistanceKm = (steps * stepLength) / 1000;
 
-        if (_totalDistance > 0 && durationInMinutes > 0) {
-          avgPace = durationInMinutes / _totalDistance;
+        // Gunakan jarak GPS jika tersedia, atau jarak dari langkah
+        final double effectiveDistance = max(
+          _totalDistance,
+          stepDistanceKm,
+        );
+
+        // Perhitungan pace
+        if (durationInSeconds > 0 && effectiveDistance > 0) {
+          final paceInSecondsPerKm = durationInSeconds / effectiveDistance;
+          avgPace = paceInSecondsPerKm / 60;
         } else {
           avgPace = 0;
         }
-        print("Distance: ${_totalDistance.toStringAsFixed(2)} km");
-        print("Avg Pace: ${avgPace.toStringAsFixed(2)} min/km");
+
+        // Perhitungan kalori
+        final met = _metRates[_selectedActivity] ?? 0.0;
+        calories = (met * _userWeightKg * durationInHours).round();
+
+        print("Duration: ${_formatDuration(_stopwatch.elapsed)}");
+        print("Effective Distance: ${effectiveDistance.toStringAsFixed(3)} km");
         print("Steps: $steps");
+        print("Avg Pace: ${avgPace.toStringAsFixed(2)} min/km");
+        print("Calories: $calories");
       });
     });
 
@@ -283,6 +305,7 @@ void _startSimulation() {
       _startSimulation();
     }
 
+    // Inisialisasi langkah awal dengan error handling
     _stepCountStream.first.then((initial) {
       if (mounted && _isRunning) {
         setState(() {
@@ -290,6 +313,13 @@ void _startSimulation() {
           _startStepsInitialized = true;
         });
       }
+    }).catchError((e) {
+      print("Error getting initial steps: $e");
+      // Fallback jika tidak bisa dapat langkah awal
+      setState(() {
+        _startSteps = 0;
+        _startStepsInitialized = true;
+      });
     });
   }
 
@@ -374,94 +404,93 @@ void _startSimulation() {
               ),
             ),
             Expanded(
-              child:
-                  _currentPosition == null
-                      ? Center(child: CircularProgressIndicator())
-                      : FlutterMap(
-                        mapController: _mapController,
-                        options: MapOptions(
-                          initialCenter: _currentPosition!,
-                          initialZoom: 16,
+              child: _currentPosition == null
+                  ? Center(child: CircularProgressIndicator())
+                  : FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: _currentPosition!,
+                        initialZoom: 16,
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          subdomains: ['a', 'b', 'c'],
+                          userAgentPackageName: 'com.example.app',
                         ),
-                        children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            subdomains: ['a', 'b', 'c'],
-                            userAgentPackageName: 'com.example.app',
-                          ),
-                          if (_routePoints.isNotEmpty)
-                            PolylineLayer(
-                              polylines: [
-                                Polyline(
-                                  points: _routePoints,
-                                  color: Colors.blue,
-                                  strokeWidth: 4.0,
-                                ),
-                              ],
-                            ),
-                          MarkerLayer(
-                            markers: [
-                              Marker(
-                                point: _currentPosition!,
-                                width: 60,
-                                height: 60,
-                                child: const Icon(
-                                  Icons.location_pin,
-                                  color: Colors.red,
-                                  size: 40,
-                                ),
+                        if (_routePoints.isNotEmpty)
+                          PolylineLayer(
+                            polylines: [
+                              Polyline(
+                                points: _routePoints,
+                                color: Colors.blue,
+                                strokeWidth: 4.0,
                               ),
-                              if (_startPosition != null)
-                                Marker(
-                                  point: _startPosition!,
-                                  width: 80,
-                                  height: 80,
-                                  child: Column(
-                                    children: const [
-                                      Icon(
-                                        Icons.flag,
-                                        color: Colors.green,
-                                        size: 30,
-                                      ),
-                                      Text(
-                                        'Start',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.green,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              if (_finishPosition != null)
-                                Marker(
-                                  point: _finishPosition!,
-                                  width: 80,
-                                  height: 80,
-                                  child: Column(
-                                    children: const [
-                                      Icon(
-                                        Icons.flag,
-                                        color: Colors.blue,
-                                        size: 30,
-                                      ),
-                                      Text(
-                                        'Finish',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.blue,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
                             ],
                           ),
-                        ],
-                      ),
+                        MarkerLayer(
+                          markers: [
+                            Marker(
+                              point: _currentPosition!,
+                              width: 60,
+                              height: 60,
+                              child: const Icon(
+                                Icons.location_pin,
+                                color: Colors.red,
+                                size: 40,
+                              ),
+                            ),
+                            if (_startPosition != null)
+                              Marker(
+                                point: _startPosition!,
+                                width: 80,
+                                height: 80,
+                                child: Column(
+                                  children: const [
+                                    Icon(
+                                      Icons.flag,
+                                      color: Colors.green,
+                                      size: 30,
+                                    ),
+                                    Text(
+                                      'Start',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (_finishPosition != null)
+                              Marker(
+                                point: _finishPosition!,
+                                width: 80,
+                                height: 80,
+                                child: Column(
+                                  children: const [
+                                    Icon(
+                                      Icons.flag,
+                                      color: Colors.blue,
+                                      size: 30,
+                                    ),
+                                    Text(
+                                      'Finish',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.blue,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
             ),
             const SizedBox(height: 12),
             Padding(
@@ -511,10 +540,9 @@ void _startSimulation() {
                           color: isSelected ? Colors.black : Colors.white,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color:
-                                isSelected
-                                    ? Colors.black
-                                    : Colors.grey.shade400,
+                            color: isSelected
+                                ? Colors.black
+                                : Colors.grey.shade400,
                             width: 1.5,
                           ),
                         ),
@@ -547,10 +575,9 @@ void _startSimulation() {
             Padding(
               padding: const EdgeInsets.all(12.0),
               child: ElevatedButton.icon(
-                onPressed:
-                    _currentPosition == null
-                        ? null
-                        : (_isRunning ? _stopRun : _startRun),
+                onPressed: _currentPosition == null
+                    ? null
+                    : (_isRunning ? _stopRun : _startRun),
                 icon: Icon(
                   _isRunning ? Icons.stop : Icons.play_arrow,
                   color: Colors.white,

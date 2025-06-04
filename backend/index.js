@@ -32,7 +32,6 @@ db.sync().then(() => {
     console.error("Step 3 Error syncing database:", error);
 });
 
-console.log("PORT:", process.env.PORT);
 
 
 app.use('/', (req, res) => {

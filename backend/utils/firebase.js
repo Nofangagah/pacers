@@ -6,7 +6,7 @@ import { dirname, resolve } from 'path';
 // Path ke file JSON (otomatis absolute)
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const jsonPath = resolve(__dirname, '../pacer-32453-firebase-adminsdk-fbsvc-2616f3fef2.json');
+const jsonPath = resolve(__dirname, '../pacer.json');
 
 // Baca file JSON secara manual
 const jsonString = await readFile(jsonPath, 'utf-8');
