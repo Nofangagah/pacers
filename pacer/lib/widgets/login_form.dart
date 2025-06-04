@@ -31,27 +31,33 @@ class _LoginFormState extends State<LoginForm> {
       }
 
       if (mounted) {
-  if (result['success']) {
-    final prefs = await SharedPreferences.getInstance();
-    final userWeight = prefs.getInt('userWeight') ?? 0;
-    final userId = prefs.getInt('userId');
+        if (result['success']) {
+          if (widget.isRegister) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Registration successful, please login.')),
+            );
+            Navigator.pushReplacementNamed(context, '/login');
+          } else {
+            final prefs = await SharedPreferences.getInstance();
+            final userWeight = prefs.getInt('userWeight') ?? 0;
+            final userId = prefs.getInt('userId');
 
-    if (userWeight <= 0) {
-      Navigator.pushReplacementNamed(
-        context,
-        '/set-weight',
-        arguments: {'userId': userId},
-      );
-    } else {
-      Navigator.pushReplacementNamed(context, '/home');
-    }
-  } else {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(result['message'])),
-    );
-  }
-}
-
+            if (userWeight <= 0) {
+              Navigator.pushReplacementNamed(
+                context,
+                '/set-weight',
+                arguments: {'userId': userId},
+              );
+            } else {
+              Navigator.pushReplacementNamed(context, '/home');
+            }
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result['message'])),
+          );
+        }
+      }
     }
   }
 
@@ -76,8 +82,8 @@ class _LoginFormState extends State<LoginForm> {
             controller: _passwordController,
             decoration: const InputDecoration(labelText: 'Password'),
             obscureText: true,
-            validator:
-                (value) => value!.length < 6 ? 'Password too short' : null,
+            validator: (value) =>
+                value!.length < 6 ? 'Password too short' : null,
           ),
           const SizedBox(height: 16),
           ElevatedButton(

@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:location/location.dart';
 import 'package:pedometer/pedometer.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class RunningPage extends StatefulWidget {
   const RunningPage({super.key});
@@ -16,6 +18,9 @@ enum ActivityType { jalan, lari, sepeda }
 class _RunningPageState extends State<RunningPage> {
   final Location _location = Location();
   LatLng? _currentPosition;
+  LatLng? _startPosition;
+  LatLng? _finishPosition;
+
   late final MapController _mapController;
   bool _isRunning = false;
   final Stopwatch _stopwatch = Stopwatch();
@@ -27,10 +32,13 @@ class _RunningPageState extends State<RunningPage> {
   int calories = 0;
   double avgPace = 0;
   double _totalDistance = 0.0;
-  List<LatLng> _routePoints = [];
+  final List<LatLng> _routePoints = [];
+
   int steps = 0;
   int _startSteps = 0;
   bool _startStepsInitialized = false;
+
+  Duration _elapsed = Duration.zero;
 
   ActivityType _selectedActivity = ActivityType.lari;
 
@@ -47,6 +55,11 @@ class _RunningPageState extends State<RunningPage> {
   };
 
   final double _userWeightKg = 60.0;
+  final prefs = SharedPreferences.getInstance();
+  
+
+  bool _isSimulating = false;
+  Timer? _simulationTimer;
 
   @override
   void initState() {
@@ -72,67 +85,156 @@ class _RunningPageState extends State<RunningPage> {
   }
 
   Future<void> _initializeLocation() async {
-    bool _serviceEnabled = await _location.serviceEnabled();
-    if (!_serviceEnabled) {
-      _serviceEnabled = await _location.requestService();
-      if (!_serviceEnabled) return;
+  // Cek dan minta akses lokasi
+  bool serviceEnabled = await _location.serviceEnabled();
+  if (!serviceEnabled) {
+    serviceEnabled = await _location.requestService();
+    if (!serviceEnabled) {
+      print("❌ Lokasi tidak diaktifkan.");
+      return;
     }
-
-    PermissionStatus _permissionGranted = await _location.hasPermission();
-    if (_permissionGranted == PermissionStatus.denied) {
-      _permissionGranted = await _location.requestPermission();
-      if (_permissionGranted != PermissionStatus.granted) return;
-    }
-
-    final locationData = await _location.getLocation();
-    if (locationData.latitude != null && locationData.longitude != null) {
-      setState(() {
-        _currentPosition = LatLng(
-          locationData.latitude!,
-          locationData.longitude!,
-        );
-      });
-      _mapController.move(_currentPosition!, 16);
-    }
-
-    _locationSubscription = _location.onLocationChanged.listen((locationData) {
-      if (locationData.latitude != null && locationData.longitude != null) {
-        final newPosition = LatLng(
-          locationData.latitude!,
-          locationData.longitude!,
-        );
-
-        if (_currentPosition == null ||
-            newPosition.latitude != _currentPosition!.latitude ||
-            newPosition.longitude != _currentPosition!.longitude) {
-          setState(() {
-            _currentPosition = newPosition;
-            _mapController.move(newPosition, _mapController.camera.zoom);
-
-            if (_isRunning) {
-              if (_routePoints.isNotEmpty) {
-                final lastPoint = _routePoints.last;
-                final distance = Distance().as(
-                  LengthUnit.Kilometer,
-                  lastPoint,
-                  newPosition,
-                );
-                _totalDistance += distance;
-              }
-              _routePoints.add(newPosition);
-            }
-          });
-        }
-      }
-    });
   }
 
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _locationSubscription?.cancel();
-    _stepCountSubscription?.cancel();
-    super.dispose();
+  PermissionStatus permissionGranted = await _location.hasPermission();
+  if (permissionGranted == PermissionStatus.denied) {
+    permissionGranted = await _location.requestPermission();
+    if (permissionGranted != PermissionStatus.granted) {
+      print("❌ Izin lokasi tidak diberikan.");
+      return;
+    }
+  }
+
+  // Atur agar lokasi update lebih sering
+  await _location.changeSettings(
+    interval: 1000, // update setiap 1 detik
+    distanceFilter: 1, // update jika pindah 1 meter
+  );
+
+  // Ambil lokasi awal
+  final locationData = await _location.getLocation();
+  if (locationData.latitude != null && locationData.longitude != null) {
+    final pos = LatLng(locationData.latitude!, locationData.longitude!);
+
+    setState(() {
+      _currentPosition = pos;
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _mapController.camera != null) {
+        _mapController.move(pos, 16);
+      }
+    });
+
+    print("📍 Lokasi awal: $_currentPosition");
+  }
+
+  // Dengarkan perubahan lokasi
+  _locationSubscription = _location.onLocationChanged.listen((locationData) {
+    if (_isSimulating) return;
+
+    final newLat = locationData.latitude;
+    final newLng = locationData.longitude;
+
+    if (newLat == null || newLng == null) return;
+
+    final newPosition = LatLng(newLat, newLng);
+
+    final movedEnough = _currentPosition == null ||
+        Distance().as(LengthUnit.Meter, _currentPosition!, newPosition) > 1;
+
+    if (movedEnough) {
+      print("📡 Lokasi berubah: $newPosition");
+
+      setState(() {
+        _currentPosition = newPosition;
+        _mapController.move(newPosition, _mapController.camera.zoom);
+
+        if (_isRunning) {
+          if (_routePoints.isNotEmpty) {
+            final lastPoint = _routePoints.last;
+            final distance = Distance().as(
+              LengthUnit.Kilometer,
+              lastPoint,
+              newPosition,
+            );
+            _totalDistance += distance;
+          }
+          _routePoints.add(newPosition);
+        }
+      });
+    }
+  });
+}
+
+
+
+void _startSimulation() {
+  if (_currentPosition == null) return;
+
+  const int stepsPerSecond = 3;
+  const int tickSeconds = 2;
+  final int stepsPerTick = stepsPerSecond * tickSeconds; // 6 langkah per tick
+  const double stepLengthMeters = 1.2; // panjang langkah lari
+
+  _simulationTimer = Timer.periodic(Duration(seconds: tickSeconds), (_) {
+    if (!_isRunning) return;
+
+    _stopwatch.elapsed;  // just to keep it running
+
+    setState(() {
+      steps += stepsPerTick;
+
+      double distanceKm = (stepsPerTick * stepLengthMeters) / 1000;
+
+      double deltaLat = distanceKm / 111.32;
+      double deltaLng = distanceKm / (111.32 * 
+        (cos(_currentPosition!.latitude * (pi / 180))));
+
+      _currentPosition = LatLng(
+        _currentPosition!.latitude + deltaLat,
+        _currentPosition!.longitude + deltaLng,
+      );
+
+      _mapController.move(_currentPosition!, _mapController.camera.zoom);
+
+      if (_routePoints.isNotEmpty) {
+        final lastPoint = _routePoints.last;
+        final distance = Distance().as(
+          LengthUnit.Kilometer,
+          lastPoint,
+          _currentPosition!,
+        );
+        _totalDistance += distance;
+      }
+
+      _routePoints.add(_currentPosition!);
+
+      // Pace update here, using stopwatch elapsed time in minutes
+      final durationInMinutes = _stopwatch.elapsed.inSeconds / 60;
+      if (_totalDistance > 0 && durationInMinutes > 0) {
+        avgPace = durationInMinutes / _totalDistance;
+      } else {
+        avgPace = 0;
+      }
+
+      // Calories update (optional)
+      final durationInHours = _stopwatch.elapsed.inSeconds / 3600;
+      final met = _metRates[_selectedActivity] ?? 0.0;
+      calories = (met * _userWeightKg * durationInHours).round();
+
+      // Print for debugging
+      print("Steps: $steps");
+      print("Distance: ${_totalDistance.toStringAsFixed(3)} km");
+      print("Avg Pace: ${avgPace.toStringAsFixed(2)} min/km");
+      print("Calories: $calories");
+    });
+  });
+}
+
+
+
+  void _stopSimulation() {
+    _simulationTimer?.cancel();
   }
 
   void _startRun() {
@@ -146,49 +248,86 @@ class _RunningPageState extends State<RunningPage> {
       calories = 0;
       steps = 0;
       _startStepsInitialized = false;
+      _finishPosition = null;
     });
 
     if (_currentPosition != null) {
+      _startPosition = _currentPosition;
       _routePoints.add(_currentPosition!);
     }
 
-    _stepCountStream.first.then((value) {
-      setState(() {
-        _startSteps = value.steps;
-        _startStepsInitialized = true;
-      });
-    });
-
-    _timer = Timer.periodic(Duration(seconds: 1), (_) {
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() {
         final durationInSeconds = _stopwatch.elapsed.inSeconds;
         final durationInMinutes = durationInSeconds / 60;
         final durationInHours = durationInSeconds / 3600;
 
-        final met = _metRates[_selectedActivity] ?? 0.0;
-        calories = (met * _userWeightKg * durationInHours).round();
+        final isMoving = steps > 0 || _totalDistance > 0.01;
+        if (isMoving) {
+          final met = _metRates[_selectedActivity] ?? 0.0;
+          calories = (met * _userWeightKg * durationInHours).round();
+        }
 
         if (_totalDistance > 0 && durationInMinutes > 0) {
           avgPace = durationInMinutes / _totalDistance;
         } else {
           avgPace = 0;
         }
+        print("Distance: ${_totalDistance.toStringAsFixed(2)} km");
+        print("Avg Pace: ${avgPace.toStringAsFixed(2)} min/km");
+        print("Steps: $steps");
       });
+    });
+
+    if (_isSimulating) {
+      _startSimulation();
+    }
+
+    _stepCountStream.first.then((initial) {
+      if (mounted && _isRunning) {
+        setState(() {
+          _startSteps = initial.steps;
+          _startStepsInitialized = true;
+        });
+      }
     });
   }
 
   void _stopRun() {
+    _stopwatch.stop();
+    _timer?.cancel();
+    _stopSimulation();
     setState(() {
       _isRunning = false;
-      _stopwatch.stop();
-      _timer?.cancel();
+      _finishPosition = _currentPosition;
+      _elapsed = _stopwatch.elapsed;
     });
-
-    // Simpan hasil jika perlu
   }
 
   String _formatDuration(Duration d) =>
       "${d.inMinutes.toString().padLeft(2, '0')}:${(d.inSeconds % 60).toString().padLeft(2, '0')}";
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _locationSubscription?.cancel();
+    _stepCountSubscription?.cancel();
+    _simulationTimer?.cancel();
+    super.dispose();
+  }
+
+  Widget _metric(String label, String value) {
+    return Column(
+      children: [
+        Text(
+          value,
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        ),
+        SizedBox(height: 4),
+        Text(label),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -206,9 +345,8 @@ class _RunningPageState extends State<RunningPage> {
                         ? "Mengambil lokasi..."
                         : "GPS Aktif",
                     style: TextStyle(
-                      color: _currentPosition == null
-                          ? Colors.grey
-                          : Colors.green,
+                      color:
+                          _currentPosition == null ? Colors.grey : Colors.green,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -216,7 +354,12 @@ class _RunningPageState extends State<RunningPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      _metric("Duration", _formatDuration(_stopwatch.elapsed)),
+                      _metric(
+                        "Duration",
+                        _formatDuration(
+                          _isRunning ? _stopwatch.elapsed : _elapsed,
+                        ),
+                      ),
                       _metric("Calories", "$calories cal"),
                       _metric(
                         "Avg. Pace",
@@ -231,49 +374,115 @@ class _RunningPageState extends State<RunningPage> {
               ),
             ),
             Expanded(
-              child: _currentPosition == null
-                  ? Center(child: CircularProgressIndicator())
-                  : FlutterMap(
-                      mapController: _mapController,
-                      options: MapOptions(
-                        initialCenter: _currentPosition!,
-                        initialZoom: 16,
-                      ),
-                      children: [
-                        TileLayer(
-                          urlTemplate:
-                              'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          subdomains: ['a', 'b', 'c'],
-                          userAgentPackageName: 'com.example.app',
+              child:
+                  _currentPosition == null
+                      ? Center(child: CircularProgressIndicator())
+                      : FlutterMap(
+                        mapController: _mapController,
+                        options: MapOptions(
+                          initialCenter: _currentPosition!,
+                          initialZoom: 16,
                         ),
-                        if (_routePoints.isNotEmpty)
-                          PolylineLayer(
-                            polylines: [
-                              Polyline(
-                                points: _routePoints,
-                                color: Colors.blue,
-                                strokeWidth: 4.0,
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            subdomains: ['a', 'b', 'c'],
+                            userAgentPackageName: 'com.example.app',
+                          ),
+                          if (_routePoints.isNotEmpty)
+                            PolylineLayer(
+                              polylines: [
+                                Polyline(
+                                  points: _routePoints,
+                                  color: Colors.blue,
+                                  strokeWidth: 4.0,
+                                ),
+                              ],
+                            ),
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: _currentPosition!,
+                                width: 60,
+                                height: 60,
+                                child: const Icon(
+                                  Icons.location_pin,
+                                  color: Colors.red,
+                                  size: 40,
+                                ),
                               ),
+                              if (_startPosition != null)
+                                Marker(
+                                  point: _startPosition!,
+                                  width: 80,
+                                  height: 80,
+                                  child: Column(
+                                    children: const [
+                                      Icon(
+                                        Icons.flag,
+                                        color: Colors.green,
+                                        size: 30,
+                                      ),
+                                      Text(
+                                        'Start',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.green,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              if (_finishPosition != null)
+                                Marker(
+                                  point: _finishPosition!,
+                                  width: 80,
+                                  height: 80,
+                                  child: Column(
+                                    children: const [
+                                      Icon(
+                                        Icons.flag,
+                                        color: Colors.blue,
+                                        size: 30,
+                                      ),
+                                      Text(
+                                        'Finish',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.blue,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                             ],
                           ),
-                        MarkerLayer(
-                          markers: [
-                            Marker(
-                              point: _currentPosition!,
-                              width: 60,
-                              height: 60,
-                              child: const Icon(
-                                Icons.location_pin,
-                                color: Colors.red,
-                                size: 40,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
             ),
             const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: SwitchListTile(
+                title: const Text("Aktifkan Simulasi"),
+                value: _isSimulating,
+                onChanged: (value) {
+                  setState(() {
+                    _isSimulating = value;
+                  });
+                  if (_isRunning) {
+                    if (value) {
+                      _startSimulation();
+                    } else {
+                      _stopSimulation();
+                    }
+                  }
+                },
+              ),
+            ),
             Center(
               child: SizedBox(
                 height: 60,
@@ -302,19 +511,12 @@ class _RunningPageState extends State<RunningPage> {
                           color: isSelected ? Colors.black : Colors.white,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: isSelected
-                                ? Colors.black
-                                : Colors.grey.shade400,
+                            color:
+                                isSelected
+                                    ? Colors.black
+                                    : Colors.grey.shade400,
                             width: 1.5,
                           ),
-                          boxShadow: [
-                            if (isSelected)
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 3,
-                                offset: Offset(0, 1),
-                              ),
-                          ],
                         ),
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -345,9 +547,10 @@ class _RunningPageState extends State<RunningPage> {
             Padding(
               padding: const EdgeInsets.all(12.0),
               child: ElevatedButton.icon(
-                onPressed: _currentPosition == null
-                    ? null
-                    : (_isRunning ? _stopRun : _startRun),
+                onPressed:
+                    _currentPosition == null
+                        ? null
+                        : (_isRunning ? _stopRun : _startRun),
                 icon: Icon(
                   _isRunning ? Icons.stop : Icons.play_arrow,
                   color: Colors.white,
@@ -365,19 +568,6 @@ class _RunningPageState extends State<RunningPage> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _metric(String label, String value) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-        ),
-        SizedBox(height: 4),
-        Text(label),
-      ],
     );
   }
 }
