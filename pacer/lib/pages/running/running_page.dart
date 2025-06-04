@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:location/location.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:permission_handler/permission_handler.dart' hide PermissionStatus;
 
 class RunningPage extends StatefulWidget {
   const RunningPage({super.key});
@@ -84,86 +85,92 @@ class _RunningPageState extends State<RunningPage> {
   }
 
   Future<void> _initializeLocation() async {
-    // Cek dan minta akses lokasi
-    bool serviceEnabled = await _location.serviceEnabled();
+  // Minta permission manual jika perlu
+  if (await Permission.location.request().isDenied) {
+    print("❌ Permission lokasi ditolak.");
+    return;
+  }
+
+  if (await Permission.location.isPermanentlyDenied) {
+    print("❌ Permission lokasi ditolak permanen. Minta buka settings.");
+    openAppSettings();
+    return;
+  }
+
+  if (await Permission.activityRecognition.request().isDenied) {
+    print("❌ Permission activity recognition ditolak.");
+    return;
+  }
+
+  // Cek dan minta akses lokasi dari plugin location
+  bool serviceEnabled = await _location.serviceEnabled();
+  if (!serviceEnabled) {
+    serviceEnabled = await _location.requestService();
     if (!serviceEnabled) {
-      serviceEnabled = await _location.requestService();
-      if (!serviceEnabled) {
-        print("❌ Lokasi tidak diaktifkan.");
-        return;
-      }
+      print("❌ Layanan lokasi tidak diaktifkan.");
+      return;
     }
+  }
 
-    PermissionStatus permissionGranted = await _location.hasPermission();
-    if (permissionGranted == PermissionStatus.denied) {
-      permissionGranted = await _location.requestPermission();
-      if (permissionGranted != PermissionStatus.granted) {
-        print("❌ Izin lokasi tidak diberikan.");
-        return;
-      }
+  PermissionStatus permissionGranted = await _location.hasPermission();
+  if (permissionGranted == PermissionStatus.denied) {
+    permissionGranted = await _location.requestPermission();
+    if (permissionGranted != PermissionStatus.granted) {
+      print("❌ Izin lokasi dari plugin Location ditolak.");
+      return;
     }
+  }
 
-    // Atur agar lokasi update lebih sering
-    await _location.changeSettings(
-      interval: 1000, // update setiap 1 detik
-      distanceFilter: 0.1, // update jika pindah 0.1 meter (10cm)
-    );
+  // Lanjut dengan setup lokasi
+  await _location.changeSettings(interval: 1000, distanceFilter: 0.1);
 
-    // Ambil lokasi awal
-    final locationData = await _location.getLocation();
-    if (locationData.latitude != null && locationData.longitude != null) {
-      final pos = LatLng(locationData.latitude!, locationData.longitude!);
-
-      setState(() {
-        _currentPosition = pos;
-      });
-
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _mapController.camera != null) {
-          _mapController.move(pos, 16);
-        }
-      });
-
-      print("📍 Lokasi awal: $_currentPosition");
-    }
-
-    // Dengarkan perubahan lokasi
-    _locationSubscription = _location.onLocationChanged.listen((locationData) {
-      if (_isSimulating) return;
-
-      final newLat = locationData.latitude;
-      final newLng = locationData.longitude;
-
-      if (newLat == null || newLng == null) return;
-
-      final newPosition = LatLng(newLat, newLng);
-
-      final movedEnough = _currentPosition == null ||
-          Distance().as(LengthUnit.Meter, _currentPosition!, newPosition) > 0.1;
-
-      if (movedEnough) {
-        print("📡 Lokasi berubah: $newPosition");
-
-        setState(() {
-          _currentPosition = newPosition;
-          _mapController.move(newPosition, _mapController.camera.zoom);
-
-          if (_isRunning) {
-            if (_routePoints.isNotEmpty) {
-              final lastPoint = _routePoints.last;
-              final distance = Distance().as(
-                LengthUnit.Kilometer,
-                lastPoint,
-                newPosition,
-              );
-              _totalDistance += distance;
-            }
-            _routePoints.add(newPosition);
-          }
-        });
+  final locationData = await _location.getLocation();
+  if (locationData.latitude != null && locationData.longitude != null) {
+    final pos = LatLng(locationData.latitude!, locationData.longitude!);
+    setState(() {
+      _currentPosition = pos;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _mapController.camera != null) {
+        _mapController.move(pos, 16);
       }
     });
+    print("📍 Lokasi awal: $_currentPosition");
   }
+
+  _locationSubscription = _location.onLocationChanged.listen((locationData) {
+    if (_isSimulating) return;
+
+    final newLat = locationData.latitude;
+    final newLng = locationData.longitude;
+
+    if (newLat == null || newLng == null) return;
+
+    final newPosition = LatLng(newLat, newLng);
+    final movedEnough = _currentPosition == null ||
+        Distance().as(LengthUnit.Meter, _currentPosition!, newPosition) > 0.1;
+
+    if (movedEnough) {
+      print("📡 Lokasi berubah: $newPosition");
+      setState(() {
+        _currentPosition = newPosition;
+        _mapController.move(newPosition, _mapController.camera.zoom);
+        if (_isRunning) {
+          if (_routePoints.isNotEmpty) {
+            final lastPoint = _routePoints.last;
+            final distance = Distance().as(
+              LengthUnit.Kilometer,
+              lastPoint,
+              newPosition,
+            );
+            _totalDistance += distance;
+          }
+          _routePoints.add(newPosition);
+        }
+      });
+    }
+  });
+}
 
   void _startSimulation() {
     if (_currentPosition == null) return;
