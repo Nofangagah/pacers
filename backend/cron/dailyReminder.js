@@ -28,33 +28,18 @@ const sendReminders = async (title, message) => {
 };
 
 const scheduleDailyReminder = () => {
-  // Notifikasi pagi - jam 9
   cron.schedule(
-    '0 9 * * *',
-    () => {
-      sendReminders(
-        'Selamat pagi!',
-        'Jangan lupa catat aktivitas olahragamu hari ini di PACER 💪'
-      );
-    },
-    {
-      timezone: 'Asia/Jakarta',
-    }
-  );
-
-  // Notifikasi sore - jam 16
-  cron.schedule(
-    '0 16 * * *',
-    () => {
-      sendReminders(
-        'Selamat sore!',
-        'Sudahkah kamu berolahraga hari ini? Jangan lupa catat di PACER 🏃‍♂️'
-      );
-    },
-    {
-      timezone: 'Asia/Jakarta',
-    }
-  );
+  '*/5 * * * *', // setiap 5 menit
+  () => {
+    sendReminders(
+      'Notifikasi rutin tiap 5 menit',
+      'Ingat untuk tetap aktif dan catat aktivitasmu di PACER!'
+    );
+  },
+  {
+    timezone: 'Asia/Jakarta',
+  }
+);
 };
 
 export default scheduleDailyReminder;
