@@ -6,7 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:location/location.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:permission_handler/permission_handler.dart' hide PermissionStatus;
+import 'package:permission_handler/permission_handler.dart' as perm_handler;
 
 class RunningPage extends StatefulWidget {
   const RunningPage({super.key});
@@ -83,21 +83,20 @@ class _RunningPageState extends State<RunningPage> {
       cancelOnError: true,
     );
   }
-
-  Future<void> _initializeLocation() async {
+Future<void> _initializeLocation() async {
   // Minta permission manual jika perlu
-  if (await Permission.location.request().isDenied) {
+  if (await perm_handler.Permission.location.request().isDenied) {
     print("❌ Permission lokasi ditolak.");
     return;
   }
 
-  if (await Permission.location.isPermanentlyDenied) {
+  if (await perm_handler.Permission.location.isPermanentlyDenied) {
     print("❌ Permission lokasi ditolak permanen. Minta buka settings.");
-    openAppSettings();
+    perm_handler.openAppSettings();
     return;
   }
 
-  if (await Permission.activityRecognition.request().isDenied) {
+  if (await perm_handler.Permission.activityRecognition.request().isDenied) {
     print("❌ Permission activity recognition ditolak.");
     return;
   }
@@ -587,15 +586,15 @@ class _RunningPageState extends State<RunningPage> {
                     : (_isRunning ? _stopRun : _startRun),
                 icon: Icon(
                   _isRunning ? Icons.stop : Icons.play_arrow,
-                  color: Colors.white,
+                  color: Colors.black,
                 ),
                 label: Text(
                   _isRunning ? "STOP Running" : "START Running",
-                  style: TextStyle(color: Colors.white),
+                  style: TextStyle(color: Colors.black),
                 ),
                 style: ElevatedButton.styleFrom(
                   minimumSize: Size(double.infinity, 50),
-                  backgroundColor: _isRunning ? Colors.red : Colors.black,
+                  backgroundColor: _isRunning ? Colors.red : Colors.white,
                 ),
               ),
             ),

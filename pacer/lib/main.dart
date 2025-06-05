@@ -6,13 +6,17 @@ import 'package:pacer/pages/homepage/set_weight.dart';
 import 'package:pacer/pages/profilePage/edit_profile_page.dart';
 import 'package:pacer/pages/profilePage/profile_page.dart';
 import 'package:pacer/pages/splashScreen/splash_screen.dart';
+import 'package:timeago/timeago.dart' as timeago;
+
 
 // import 'package:pacer/service/notification_service.dart';
 import 'package:firebase_core/firebase_core.dart';
 
 void main() async {
+
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp();
+   timeago.setLocaleMessages('id', timeago.IdMessages());
   runApp(const MyApp());
 }
 
@@ -22,6 +26,21 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      theme: ThemeData(
+    brightness: Brightness.dark, // gunakan tema gelap
+    scaffoldBackgroundColor: Colors.black,
+    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+      backgroundColor: Colors.black,
+      selectedItemColor: Colors.white,
+      unselectedItemColor: Colors.grey,
+      elevation: 10,
+      type: BottomNavigationBarType.fixed,
+    ),
+    textTheme: const TextTheme(
+      bodyMedium: TextStyle(color: Colors.white),
+    ),
+    iconTheme: const IconThemeData(color: Colors.white),
+  ),
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
       routes: {

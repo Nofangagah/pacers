@@ -29,10 +29,10 @@ const sendReminders = async (title, message) => {
 
 const scheduleDailyReminder = () => {
   cron.schedule(
-  '*/1 * * * *', // setiap 5 menit
+  '*/1 * * * *', 
   () => {
     sendReminders(
-      'Notifikasi rutin tiap 5 menit',
+      'Notifikasi rutin tiap 1 menit',
       'Ingat untuk tetap aktif dan catat aktivitasmu di PACER!'
     );
   },
