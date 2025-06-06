@@ -8,4 +8,5 @@ const router = Express.Router();
 router.patch('/editProfile/:id', authMiddleware, editProfile);
 router.patch('/deviceTokenUpdate/:id', authMiddleware, deviceTokenUpdate);
 
+
 export default router;

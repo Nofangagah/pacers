@@ -18,7 +18,7 @@ class _SetWeightPageState extends State<SetWeightPage> {
 
   void _saveWeight() async {
     final weight = double.tryParse(weightController.text);
-    if (weight == null || weight <= 0) {
+    if (weight == null || weight <= 0 || weight > 200) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Berat badan tidak valid')));
@@ -56,12 +56,12 @@ class _SetWeightPageState extends State<SetWeightPage> {
     setState(() => isLoading = false);
   }
 
-  void _skip() {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const HomePage()),
-    );
-  }
+  // void _skip() {
+  //   Navigator.pushReplacement(
+  //     context,
+  //     MaterialPageRoute(builder: (_) => const HomePage()),
+  //   );
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -90,7 +90,7 @@ class _SetWeightPageState extends State<SetWeightPage> {
                       onPressed: _saveWeight,
                       child: Text('Simpan'),
                     ),
-                    TextButton(onPressed: _skip, child: Text('Lewati')),
+                    // TextButton(onPressed: _skip, child: Text('Lewati')),
                   ],
                 ),
           ],

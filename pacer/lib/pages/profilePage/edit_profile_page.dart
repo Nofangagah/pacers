@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacer/service/user_service.dart';
 
@@ -13,6 +12,7 @@ class EditProfilePage extends StatefulWidget {
 class _EditProfilePageState extends State<EditProfilePage> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
+  final _weightController = TextEditingController();
 
   int? _userId;
   bool isLoading = false;
@@ -28,31 +28,43 @@ class _EditProfilePageState extends State<EditProfilePage> {
     setState(() {
       _userId = prefs.getInt('userId');
       _nameController.text = prefs.getString('userName') ?? '';
+      final weight = prefs.getDouble('userWeight');
+      _weightController.text = weight != null ? weight.toString() : '';
     });
   }
 
-  Future<void> saveUpdatedName() async {
+  Future<void> saveUpdatedProfile() async {
     if (_formKey.currentState?.validate() != true || _userId == null) return;
+
+    final weight = double.tryParse(_weightController.text);
+    if (weight == null || weight <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Berat badan harus angka positif')),
+      );
+      return;
+    }
 
     setState(() => isLoading = true);
 
     final success = await UserService.updateProfile(_userId!, {
-      'name': _nameController.text,
+      'name': _nameController.text.trim(),
+      'weight': weight,
     });
 
     if (success) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('userName', _nameController.text);
+      await prefs.setString('userName', _nameController.text.trim());
+      await prefs.setDouble('userWeight', weight);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nama berhasil diperbarui')),
+        const SnackBar(content: Text('Profil berhasil diperbarui')),
       );
       Navigator.pushReplacementNamed(context, '/profile');
     } else {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Gagal memperbarui nama')),
+          const SnackBar(content: Text('Gagal memperbarui profil')),
         );
       }
     }
@@ -63,6 +75,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
   @override
   void dispose() {
     _nameController.dispose();
+    _weightController.dispose();
     super.dispose();
   }
 
@@ -93,33 +106,39 @@ class _EditProfilePageState extends State<EditProfilePage> {
                 },
               ),
               const SizedBox(height: 20),
+              TextFormField(
+                controller: _weightController,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Berat Badan (kg)',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  final w = double.tryParse(value ?? '');
+                  if (w == null || w <= 0) {
+                    return 'Masukkan berat badan positif yang valid';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 20),
               isLoading
                   ? const CircularProgressIndicator()
                   : ElevatedButton(
-                      onPressed: saveUpdatedName,
+                      onPressed: saveUpdatedProfile,
                       child: const Text('Simpan'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.teal,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 32,
-                          vertical: 12,
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                         textStyle: const TextStyle(fontSize: 16),
                       ),
                     ),
               const SizedBox(height: 10),
               OutlinedButton(
-                onPressed: isLoading
-                    ? null
-                    : () {
-                        Navigator.pop(context);
-                      },
+                onPressed: isLoading ? null : () => Navigator.pop(context),
                 child: const Text('Batal'),
                 style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 32,
-                    vertical: 12,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                   textStyle: const TextStyle(fontSize: 16),
                 ),
               ),

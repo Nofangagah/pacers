@@ -95,7 +95,11 @@ class _ActivityPageState extends State<ActivityPage> {
                         ? Icons.directions_walk
                         : Icons.directions_bike,
                     size: 36,
-                    color: Theme.of(context).primaryColor,
+                    color: activity.type == 'run'
+                        ? Colors.white
+                        : activity.type == 'walk'
+                        ? Colors.white
+                        : Colors.white,
                   ),
                   title: Text(
                     activity.title ?? '',

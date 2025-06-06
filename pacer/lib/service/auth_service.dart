@@ -207,6 +207,8 @@ static Future<bool> refreshAccessToken() async {
   /// Simpan data user
   static Future<void> saveUserData(Map<String, dynamic> user) async {
     final prefs = await SharedPreferences.getInstance();
+     final weight = user['weight'];
+  print('[saveUserData] Berat dari backend: $weight');
     await prefs.setInt('userId', user['id']);
     await prefs.setString('userName', user['name'] ?? '');
     await prefs.setString('userEmail', user['email'] ?? '');
