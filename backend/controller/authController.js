@@ -107,13 +107,20 @@ const loginWithGoogle = async (req, res) => {
         const { sub: googleId, email, name } = payload;
 
         let user = await User.findOne({ where: { google_id: googleId } });
+
         if (!user) {
-            user = await User.create({ name, email, google_id: googleId });
+           
+            user = await User.findOne({ where: { email } });
+
+            if (user) {
+                
+                await user.update({ google_id: googleId });
+            } else {
+                
+                user = await User.create({ name, email, google_id: googleId });
+            }
         }
-        const existingUser = await User.findOne({ where: { email } });
-        if (existingUser) {
-            return res.status(400).json({ message: 'User already exists' });
-        }
+
         const userPlain = user.toJSON();
         const { password: _, refresh_token: __, ...SafeUserData } = userPlain;
         const accessToken = generateAccessToken(SafeUserData);

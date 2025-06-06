@@ -8,7 +8,13 @@ class RegisterScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Register')),
+      appBar: AppBar(title: const Text('Register'),
+      automaticallyImplyLeading: false, // Hide back button
+      centerTitle: true,
+      backgroundColor: Colors.black,
+      foregroundColor: Colors.white,
+      elevation: 0, // Remove shadow
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -18,7 +24,7 @@ class RegisterScreen extends StatelessWidget {
             const GoogleSignInButton(),
             TextButton(
               onPressed: () => Navigator.pushNamed(context, '/login'),
-              child: const Text("Already have an account? Login here."),
+              child: const Text("Already have an account? Login here.", style: TextStyle(color: Colors.white),),
             ),
           ],
         ),

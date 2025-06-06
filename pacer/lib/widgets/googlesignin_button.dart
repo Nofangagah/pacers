@@ -12,7 +12,7 @@ class GoogleSignInButton extends StatelessWidget {
         height: 24,
         width: 24,
       ),
-      label: const Text('Login dengan Google'),
+      label: const Text('Login dengan Google', style: TextStyle(fontSize: 16, color: Colors.white)),
       onPressed: () async {
         final result = await AuthService.signInWithGoogle();
 

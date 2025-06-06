@@ -17,6 +17,10 @@ class AuthService {
   /// Login dengan Google
   static Future<Map<String, dynamic>> signInWithGoogle() async {
     try {
+       if (await _googleSignIn.isSignedIn()) {
+    await _googleSignIn.disconnect();
+    await _googleSignIn.signOut();
+  }
       final GoogleSignInAccount? account = await _googleSignIn.signIn();
       if (account == null) {
         return {'success': false, 'message': 'Login dibatalkan oleh pengguna'};
