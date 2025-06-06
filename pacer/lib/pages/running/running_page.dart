@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -70,13 +71,68 @@ class _RunningPageState extends State<RunningPage> {
     _initializePedometer();
     _loadUserWeight();
   }
+
   Future<void> _loadUserWeight() async {
     final prefs = await SharedPreferences.getInstance();
+    final double? userWeight = prefs.getDouble('userWeight');
+    print('User weight loaded✌️✌️✌️: $userWeight');
+
     setState(() {
-      _userWeightKg = prefs.getDouble('user_weight')!;
-      
+      _userWeightKg = userWeight ?? 70.0;
     });
   }
+
+  // Future<void> saveActivity() async {
+  //   if (_routePoints.isEmpty) {
+  //     return;
+  //   }
+  //   try {
+  //     final prefs = await SharedPreferences.getInstance();
+  //     final int? userId = prefs.getInt('userId') ?? 0;
+  //     final Pathjson = jsonEncode(
+  //       _routePoints
+  //           .map(
+  //             (point) => {
+  //               'latitude': point.latitude,
+  //               'longitude': point.longitude,
+  //             },
+  //           )
+  //           .toList(),
+  //     );
+  //     String activitype;
+  //     switch (_selectedActivity) {
+  //       case ActivityType.jalan:
+  //         activitype = "walk";
+  //         break;
+  //       case ActivityType.lari:
+  //         activitype = "run";
+  //         break;
+  //       case ActivityType.sepeda:
+  //         activitype = "ride";
+  //         break;
+  //     }
+
+  //     final activity = {
+  //       'userId': userId,
+  //       'activityType': activitype,
+  //       'startPosition': {
+  //         'latitude': _startPosition?.latitude,
+  //         'longitude': _startPosition?.longitude,
+  //       },
+  //       'finishPosition': {
+  //         'latitude': _finishPosition?.latitude,
+  //         'longitude': _finishPosition?.longitude,
+  //       },
+  //       'routePoints': Pathjson,
+  //       'calories': calories,
+  //       'avgPace': avgPace,
+  //       'totalDistance': _totalDistance,
+  //       'steps': steps,
+  //       'startSteps': _startSteps,
+  //       'elapsedTime': _stopwatch.elapsed.inSeconds,
+  //     };
+  //   } catch (e) {}
+  // }
 
   void _initializePedometer() {
     _stepCountSubscription = _stepCountStream.listen(
@@ -254,7 +310,6 @@ class _RunningPageState extends State<RunningPage> {
       case ActivityType.sepeda:
         return 3.0; // meter per langkah untuk sepeda
       case ActivityType.jalan:
-      default:
         return 0.7; // meter per langkah untuk jalan
     }
   }

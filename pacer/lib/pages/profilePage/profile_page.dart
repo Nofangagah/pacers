@@ -30,11 +30,14 @@ class _ProfilePageState extends State<ProfilePage> {
     final result = await AuthService.logout();
     if (result['success']) {
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Berhasil logout')),
+      );
       Navigator.pushReplacementNamed(context, '/login');
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result['message'])),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result['message'])));
     }
   }
 
@@ -44,6 +47,7 @@ class _ProfilePageState extends State<ProfilePage> {
       backgroundColor: Colors.black,
       appBar: AppBar(
         title: const Text('Profil'),
+        automaticallyImplyLeading: false,
         centerTitle: true,
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
@@ -55,10 +59,15 @@ class _ProfilePageState extends State<ProfilePage> {
           children: [
             Card(
               color: Colors.grey[900],
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               elevation: 4,
               child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 32.0, horizontal: 16),
+                padding: const EdgeInsets.symmetric(
+                  vertical: 32.0,
+                  horizontal: 16,
+                ),
                 child: Column(
                   children: [
                     const CircleAvatar(
@@ -76,11 +85,16 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                     ),
                     const SizedBox(height: 8),
-                    const Divider(color: Colors.white30, thickness: 0.5, indent: 40, endIndent: 40),
+                    const Divider(
+                      color: Colors.white30,
+                      thickness: 0.5,
+                      indent: 40,
+                      endIndent: 40,
+                    ),
                     const SizedBox(height: 20),
                     SizedBox(
                       width: double.infinity,
-                      child: OutlinedButton.icon(
+                      child: ElevatedButton.icon(
                         onPressed: () {
                           Navigator.push(
                             context,
@@ -89,13 +103,14 @@ class _ProfilePageState extends State<ProfilePage> {
                             ),
                           );
                         },
-                        icon: const Icon(Icons.edit, color: Colors.white),
+                        icon: const Icon(Icons.edit, color: Colors.black),
                         label: const Text(
                           'Edit Profil',
-                          style: TextStyle(color: Colors.white),
+                          style: TextStyle(color: Colors.black),
                         ),
-                        style: OutlinedButton.styleFrom(
-                          side: const BorderSide(color: Colors.tealAccent),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
@@ -103,6 +118,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       ),
                     ),
+
                     const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,

@@ -206,14 +206,19 @@ static Future<bool> refreshAccessToken() async {
 
   /// Simpan data user
   static Future<void> saveUserData(Map<String, dynamic> user) async {
-    final prefs = await SharedPreferences.getInstance();
-     final weight = user['weight'];
-  print('[saveUserData] Berat dari backend: $weight');
-    await prefs.setInt('userId', user['id']);
-    await prefs.setString('userName', user['name'] ?? '');
-    await prefs.setString('userEmail', user['email'] ?? '');
-    await prefs.setInt('userWeight', user['weight'] ?? 0);
-  }
+  final prefs = await SharedPreferences.getInstance();
+
+  final num? weightNum = user['weight']; 
+  final double weightDouble = weightNum?.toDouble() ?? 0.0;
+
+  print('[saveUserData] Berat dari backend (cast to double): $weightDouble');
+
+  await prefs.setInt('userId', user['id']);
+  await prefs.setString('userName', user['name'] ?? '');
+  await prefs.setString('userEmail', user['email'] ?? '');
+  await prefs.setDouble('userWeight', weightDouble);
+}
+
 
   /// Cek apakah user sudah login
   static Future<bool> isLoggedIn() async {

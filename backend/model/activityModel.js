@@ -11,6 +11,8 @@ const Activity = db.define("Activity", {
   date: DataTypes.DATE,
   userId:DataTypes.INTEGER, // Foreign key to Users table
   caloriesBurned: DataTypes.INTEGER, // Calories burned during the activity
+  steps: DataTypes.INTEGER, // Number of steps taken (if applicable)
+  avr_pace: DataTypes.FLOAT, // Average pace in minutes per KM
   path: DataTypes.TEXT
 }, {
   timestamps: true,

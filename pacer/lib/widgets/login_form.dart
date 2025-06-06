@@ -19,20 +19,29 @@ class _LoginFormState extends State<LoginForm> {
   bool _isLoading = false;
 
   void _submit() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
+  if (_formKey.currentState!.validate()) {
+    setState(() => _isLoading = true);
 
-      final email = _emailController.text.trim();
-      final password = _passwordController.text.trim();
-      final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final name = _nameController.text.trim();
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      print('[LoginForm] SharedPreferences cleared');
 
       Map<String, dynamic> result;
 
       if (widget.isRegister) {
+        print('[LoginForm] Register with name=$name, email=$email');
         result = await AuthService.register(name, email, password);
       } else {
+        print('[LoginForm] Login with email=$email');
         result = await AuthService.login(email, password);
       }
+
+      print('[LoginForm] Result from AuthService: $result');
 
       if (!mounted) return;
 
@@ -40,28 +49,50 @@ class _LoginFormState extends State<LoginForm> {
 
       if (result['success']) {
         if (widget.isRegister) {
+          print('[LoginForm] Registration successful');
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Registration successful, please login.')),
+            const SnackBar(
+              content: Text('Registration successful, please login.'),
+            ),
           );
           Navigator.pushReplacementNamed(context, '/login');
         } else {
-          final prefs = await SharedPreferences.getInstance();
-          final userWeight = prefs.getInt('userWeight') ?? 0;
+          print('[LoginForm] Login successful, checking user data in prefs');
+
+          final userWeight = prefs.getDouble('userWeight') ?? 0;
           final userId = prefs.getInt('userId');
 
+          print('[LoginForm] userWeight=$userWeight, userId=$userId');
+
           if (userWeight <= 0) {
-            Navigator.pushReplacementNamed(context, '/set-weight', arguments: {'userId': userId});
+            print('[LoginForm] Redirecting to /set-weight');
+            Navigator.pushReplacementNamed(
+              context,
+              '/set-weight',
+              arguments: {'userId': userId},
+            );
           } else {
+            print('[LoginForm] Redirecting to /home');
             Navigator.pushReplacementNamed(context, '/home');
           }
         }
       } else {
+        print('[LoginForm] Auth failed: ${result['message']}');
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message'])),
+          SnackBar(content: Text(result['message'] ?? 'Unknown error')),
         );
       }
+    } catch (e, stacktrace) {
+      setState(() => _isLoading = false);
+      print('[LoginForm] Exception during submit: $e');
+      print(stacktrace);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
     }
   }
+}
+
 
   InputDecoration _inputDecoration(String label) {
     return InputDecoration(
@@ -114,7 +145,8 @@ class _LoginFormState extends State<LoginForm> {
               style: const TextStyle(color: Colors.white),
               obscureText: true,
               decoration: _inputDecoration('Password'),
-              validator: (value) => value!.length < 6 ? 'Password too short' : null,
+              validator:
+                  (value) => value!.length < 6 ? 'Password too short' : null,
             ),
           ),
           SizedBox(
@@ -122,16 +154,22 @@ class _LoginFormState extends State<LoginForm> {
             child: ElevatedButton(
               onPressed: _isLoading ? null : _submit,
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.tealAccent[700],
-                foregroundColor: Colors.white,
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child: _isLoading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : Text(widget.isRegister ? 'Register' : 'Login',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              child:
+                  _isLoading
+                      ? const CircularProgressIndicator(color: Colors.white)
+                      : Text(
+                        widget.isRegister ? 'Register' : 'Login',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
             ),
           ),
         ],

@@ -19,9 +19,8 @@ class _SplashScreenState extends State<SplashScreen> {
   Future<void> checkLoginStatus() async {
     final prefs = await SharedPreferences.getInstance();
     final accessToken = prefs.getString('accessToken');
-    final userWeight = prefs.getInt('userWeight') ?? 0;
+    final userWeight = prefs.getDouble('userWeight') ?? 0;
     final userId = prefs.getInt('userId');
-
     await Future.delayed(const Duration(seconds: 2));
 
     if (accessToken == null) {

@@ -79,6 +79,8 @@ class _CurrencyTimePageState extends State<CurrencyTimePage> {
       appBar: AppBar(
         title: const Text('Currency & Time Info'),
         backgroundColor: Colors.black,
+        centerTitle: true,
+        automaticallyImplyLeading: false
       ),
       backgroundColor: Colors.black,
       body: Padding(

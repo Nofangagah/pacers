@@ -106,7 +106,7 @@ const getActivityById = async (req, res) => {
 // POST new activity with optional segments
 // POST new activity with auto segment per 1km
 const saveActivity = async (req, res) => {
-    const { title, type, duration, date, userId, distance, caloriesBurned, path } = req.body;
+    const { title, type, duration, date, userId, distance, caloriesBurned, path, avr_pace, steps } = req.body;
 
     try {
         const validTypes = ['run', 'walk', 'ride'];
@@ -114,7 +114,7 @@ const saveActivity = async (req, res) => {
             return res.status(400).json({ message: 'Invalid activity type' });
         }
 
-        if (!title || !type || !duration || !date || !userId || !distance || !caloriesBurned || !path) {
+        if (!title || !type || !duration || !date || !userId || !distance || !caloriesBurned || !path|| !avr_pace || !steps) {
             return res.status(400).json({ message: 'All fields are required' });
         }
 
@@ -131,6 +131,8 @@ const saveActivity = async (req, res) => {
             userId,
             distance,
             caloriesBurned,
+            avr_pace,
+            steps,
             path: JSON.stringify(path),
         });
 

@@ -83,8 +83,11 @@ class _EditProfilePageState extends State<EditProfilePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Edit Profil'),
-        backgroundColor: Colors.teal,
+        title: const Text('Edit Profil',),
+        centerTitle: true,
+        automaticallyImplyLeading: false,
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
       ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
@@ -126,9 +129,9 @@ class _EditProfilePageState extends State<EditProfilePage> {
                   ? const CircularProgressIndicator()
                   : ElevatedButton(
                       onPressed: saveUpdatedProfile,
-                      child: const Text('Simpan'),
+                      child: const Text('Simpan', style: TextStyle(fontSize: 16, color: Colors.black),),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.teal,
+                        backgroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                         textStyle: const TextStyle(fontSize: 16),
                       ),
@@ -136,7 +139,7 @@ class _EditProfilePageState extends State<EditProfilePage> {
               const SizedBox(height: 10),
               OutlinedButton(
                 onPressed: isLoading ? null : () => Navigator.pop(context),
-                child: const Text('Batal'),
+                child: const Text('Batal', style: TextStyle(fontSize: 16, color: Colors.white),),
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
                   textStyle: const TextStyle(fontSize: 16),

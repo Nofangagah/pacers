@@ -33,7 +33,7 @@ class _SetWeightPageState extends State<SetWeightPage> {
 
     if (success) {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt('userWeight', weight.toInt());
+      await prefs.setDouble('userWeight', weight);
 
       // ✅ Tampilkan snackbar sukses
       ScaffoldMessenger.of(
