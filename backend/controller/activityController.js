@@ -53,7 +53,7 @@ const getUserActivities = async (req, res) => {
         });
 
         if (activities.length === 0) {
-            return res.status(404).json({ message: 'No activities found for this user' });
+            return res.status(200).json([]);
         }
 
         const parsedActivities = activities.map(activity => {

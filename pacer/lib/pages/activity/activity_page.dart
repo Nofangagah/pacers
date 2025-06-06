@@ -4,8 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacer/models/activity_model.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
-
-
 class ActivityPage extends StatefulWidget {
   final int userId;
 
@@ -40,39 +38,52 @@ class _ActivityPageState extends State<ActivityPage> {
     final secs = seconds % 60;
     return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
   }
-  String formatRelativeDate(String? dateString) {
-  if (dateString == null) return "-";
-  final date = DateTime.parse(dateString);
-  return timeago.format(date, locale: 'id'); 
-}
 
+  String formatRelativeDate(String? dateString) {
+    if (dateString == null) return "-";
+    final date = DateTime.parse(dateString);
+    return timeago.format(date, locale: 'id');
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Activities'),
-        centerTitle: true,
-      ),
+      appBar: AppBar(title: const Text('My Activities'), centerTitle: true),
       body: FutureBuilder<List<activityModel>>(
         future: _activities,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          } else if (!snapshot.hasData || snapshot.data!.isEmpty) {
-            return const Center(child: Text('No activities found.'));
           }
 
-          final activities = snapshot.data!;
+          if (snapshot.hasError) {
+            final errorMessage = snapshot.error.toString();
+            if (errorMessage.contains('Failed to load activities')) {
+              // Fallback for empty activity or server returning an error
+              return const Center(
+                child: Text('Belum ada aktivitas. Yuk mulai bergerak!'),
+              );
+            }
+            return Center(child: Text('Terjadi kesalahan: $errorMessage'));
+          }
+
+          final activities = snapshot.data ?? [];
+
+          if (activities.isEmpty) {
+            return const Center(
+              child: Text('Belum ada aktivitas. Yuk mulai bergerak!'),
+            );
+          }
+
           return ListView.builder(
             padding: const EdgeInsets.all(12),
             itemCount: activities.length,
             itemBuilder: (context, index) {
               final activity = activities[index];
               return Card(
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 elevation: 4,
                 margin: const EdgeInsets.symmetric(vertical: 8),
                 child: ListTile(
@@ -81,19 +92,26 @@ class _ActivityPageState extends State<ActivityPage> {
                     activity.type == 'run'
                         ? Icons.directions_run
                         : activity.type == 'walk'
-                            ? Icons.directions_walk
-                            : Icons.directions_bike,
+                        ? Icons.directions_walk
+                        : Icons.directions_bike,
                     size: 36,
                     color: Theme.of(context).primaryColor,
                   ),
-                  title: Text(activity.title ?? '', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  title: Text(
+                    activity.title ?? '',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 4),
-                     Text('Date: ${formatRelativeDate(activity.date)}'),
-                      Text('Distance: ${activity.distance?.toStringAsFixed(2)} km'),
-                      Text('Duration: ${activity.duration != null ? formatDuration(activity.duration!) : "-"}'),
+                      Text('Date: ${formatRelativeDate(activity.date)}'),
+                      Text(
+                        'Distance: ${activity.distance?.toStringAsFixed(2)} km',
+                      ),
+                      Text(
+                        'Duration: ${activity.duration != null ? formatDuration(activity.duration!) : "-"}',
+                      ),
                     ],
                   ),
                   onTap: () {
