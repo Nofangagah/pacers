@@ -1,5 +1,5 @@
 import Express from 'express';
-import { getAllActivities, getUserActivities, saveActivity, getActivityById } from '../controller/activityController.js';
+import { getAllActivities, getUserActivities, saveActivity, getActivityById, deleteActivity } from '../controller/activityController.js';
 import  authMiddleware  from '../middleware/authMiddleware.js';
 const router = Express.Router();
 
@@ -11,5 +11,8 @@ router.get('/user/:id', authMiddleware, getUserActivities);
 router.post('/saveActivity', authMiddleware, saveActivity);
 // GET single activity by ID
 router.get('/:id', authMiddleware, getActivityById);
+
+router.delete('/:id', authMiddleware, deleteActivity);
+
 
 export default router;

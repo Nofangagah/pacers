@@ -35,7 +35,7 @@ static Future<List<ActivityModel>> saveActivity(ActivityModel activity) async {
           'lat': p['lat'],
           'lng': p['lng']
         }).toList(),
-        'date': activity.date,
+         'date': activity.date.toIso8601String(),
         'userId': activity.userId,
         'createdAt': activity.createdAt,
         'updatedAt': activity.updatedAt,

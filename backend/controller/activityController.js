@@ -276,10 +276,38 @@ function deg2rad(deg) {
     return deg * (Math.PI / 180);
 }
 
+const deleteActivity = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const activity = await Activity.findByPk(id);
+
+        if (!activity) {
+            return res.status(404).json({ message: 'Activity not found' });
+        }
+
+        await ActivitySegment.destroy({ where: { activityId: id } });
+        await Activity.destroy({ where: { id } });
+
+        res.status(200).json({ message: 'Activity deleted successfully' });
+
+
+        
+    } catch (error) {
+        res.status(500).json({ message: 'Error deleting activity', error: error.message });
+    
+        
+    }
+
+
+
+}
+
 
 export {
     getAllActivities,
     getUserActivities,
     getActivityById,
     saveActivity,
+    deleteActivity
 };

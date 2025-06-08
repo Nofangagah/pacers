@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pacer/pages/activity/detail_activity_page.dart';
 import 'package:pacer/service/activity_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pacer/models/activity_model.dart';
@@ -27,6 +28,12 @@ class _ActivityPageState extends State<ActivityPage> {
     return await ActivityService.getActivities(widget.userId);
   }
 
+  Future<void> _refreshActivities() async {
+    setState(() {
+      _activities = _fetchActivities();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -39,95 +46,98 @@ class _ActivityPageState extends State<ActivityPage> {
     return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
   }
 
-  String formatRelativeDate(String? dateString) {
-    if (dateString == null) return "-";
-    final date = DateTime.parse(dateString);
+  String formatRelativeDate(DateTime date) {
     return timeago.format(date, locale: 'id');
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Activities'), centerTitle: true,
-      automaticallyImplyLeading: false,
+      appBar: AppBar(
+        title: const Text('My Activities'),
+        centerTitle: true,
+        automaticallyImplyLeading: false,
       ),
-      body: FutureBuilder<List<ActivityModel>>(
-        future: _activities,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            final errorMessage = snapshot.error.toString();
-            if (errorMessage.contains('Failed to load activities')) {
-              // Fallback for empty activity or server returning an error
-              return const Center(
-                child: Text('There is no activity yet.'),
-              );
+      body: RefreshIndicator(
+        onRefresh: _refreshActivities,
+        child: FutureBuilder<List<ActivityModel>>(
+          future: _activities,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
             }
-            return Center(child: Text('Terjadi kesalahan: $errorMessage'));
-          }
 
-          final activities = snapshot.data ?? [];
+            if (snapshot.hasError) {
+              final errorMessage = snapshot.error.toString();
+              if (errorMessage.contains('Failed to load activities')) {
+                return const Center(child: Text('There is no activity yet.'));
+              }
+              return Center(child: Text('Terjadi kesalahan: $errorMessage'));
+            }
 
-          if (activities.isEmpty) {
-            return const Center(
-              child: Text('There is no activity yet'),
+            final activities = snapshot.data ?? [];
+
+            if (activities.isEmpty) {
+              return const Center(child: Text('There is no activity yet'));
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(12),
+              itemCount: activities.length,
+              itemBuilder: (context, index) {
+                final activity = activities[index];
+                return Card(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  elevation: 4,
+                  margin: const EdgeInsets.symmetric(vertical: 8),
+                  child: ListTile(
+                    contentPadding: const EdgeInsets.all(16),
+                    leading: Icon(
+                      activity.type == 'run'
+                          ? Icons.directions_run
+                          : activity.type == 'walk'
+                              ? Icons.directions_walk
+                              : Icons.directions_bike,
+                      size: 36,
+                      color: activity.type == 'run'
+                          ? Colors.white
+                          : activity.type == 'walk'
+                              ? Colors.white
+                              : Colors.white,
+                    ),
+                    title: Text(
+                      activity.title ?? '',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const SizedBox(height: 4),
+                        Text('Date: ${formatRelativeDate(activity.date)}'),
+                        Text(
+                          'Distance: ${activity.distance?.toStringAsFixed(0)} m',
+                        ),
+                        Text(
+                          'Duration: ${activity.duration != null ? formatDuration(activity.duration!) : "-"}',
+                        ),
+                      ],
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => ActivityDetailPage(activity: activity),
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
             );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(12),
-            itemCount: activities.length,
-            itemBuilder: (context, index) {
-              final activity = activities[index];
-              return Card(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                elevation: 4,
-                margin: const EdgeInsets.symmetric(vertical: 8),
-                child: ListTile(
-                  contentPadding: const EdgeInsets.all(16),
-                  leading: Icon(
-                    activity.type == 'run'
-                        ? Icons.directions_run
-                        : activity.type == 'walk'
-                        ? Icons.directions_walk
-                        : Icons.directions_bike,
-                    size: 36,
-                    color: activity.type == 'run'
-                        ? Colors.white
-                        : activity.type == 'walk'
-                        ? Colors.white
-                        : Colors.white,
-                  ),
-                  title: Text(
-                    activity.title ?? '',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 4),
-                      Text('Date: ${formatRelativeDate(activity.date)}'),
-                      Text(
-                        'Distance: ${activity.distance?.toStringAsFixed(2)} km',
-                      ),
-                      Text(
-                        'Duration: ${activity.duration != null ? formatDuration(activity.duration!) : "-"}',
-                      ),
-                    ],
-                  ),
-                  onTap: () {
-                    // TODO: Navigate to detail
-                  },
-                ),
-              );
-            },
-          );
-        },
+          },
+        ),
       ),
     );
   }

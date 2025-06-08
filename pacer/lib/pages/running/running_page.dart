@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -143,7 +142,7 @@ class _RunningPageState extends State<RunningPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text("Total Distance: ${_totalDistance.toStringAsFixed(1)} m"),
+                Text("Total Distance: ${_totalDistance.toStringAsFixed(0)} m"),
                 Text("Duration: ${_formatDuration(_stopwatch.elapsed)}"),
                 Text("Steps: $steps"),
                 Text("Calories: $calories cal"),
@@ -199,22 +198,8 @@ class _RunningPageState extends State<RunningPage> {
                 .map((p) => {'lat': p.latitude, 'lng': p.longitude})
                 .toList();
       } else if (!_usingGps) {
-        // Jika tidak menggunakan GPS, path bisa saja kosong atau hanya 1 titik, tergantung kebutuhan
-        // Untuk saat ini, asumsikan kosong jika tidak GPS dan tidak ada route points
         pathData = [];
       }
-      print('CLIENT UI: Preparing activity data:');
-      print('  Title: ${_titleController.text}');
-      print('  Type: $activityType');
-      print('  Distance: $_totalDistance');
-      print('  Duration: ${_stopwatch.elapsed.inSeconds}');
-      print('  Calories: $calories');
-      print('  Steps: $steps');
-      print('  Avg Pace: $avgPace');
-      print('  Path points count: ${pathData.length}');
-      print('  Date: ${DateTime.now().toIso8601String()}');
-      print('  UserId: $userId');
-
       final activity = ActivityModel(
         title:
             _titleController.text.isNotEmpty
@@ -227,7 +212,7 @@ class _RunningPageState extends State<RunningPage> {
         steps: steps,
         avr_pace: avgPace,
         path: pathData, // Mengirimkan data path yang sudah diproses
-        date: DateTime.now().toIso8601String(),
+        date: DateTime.now(),
         userId: userId,
         createdAt: DateTime.now().toIso8601String(),
         updatedAt: DateTime.now().toIso8601String(),
@@ -258,7 +243,7 @@ class _RunningPageState extends State<RunningPage> {
 
   String generateDefaultTitle(String activityType, double distance) {
     final activityNames = {'walk': 'walk', 'run': 'run', 'ride': 'ride'};
-    return "${activityNames[activityType]} ${(_totalDistance / 1000).toStringAsFixed(1)} km";
+    return "${activityNames[activityType]} ${(_totalDistance / 1000).toStringAsFixed(0)} km";
   }
 
   void _resetActivity() {
@@ -691,7 +676,7 @@ class _RunningPageState extends State<RunningPage> {
                   Text(
                     _currentPosition == null
                         ? "Acquiring location..."
-                        : "GPS ${_usingGps ? 'Active' : 'Inactive'} (Accuracy: ${_lastAccuracy.toStringAsFixed(1)}m)",
+                        : "GPS ${_usingGps ? 'Active' : 'Inactive'} (Accuracy: ${_lastAccuracy.toStringAsFixed(0)}m)",
                     style: TextStyle(
                       color:
                           _currentPosition == null
@@ -727,7 +712,7 @@ class _RunningPageState extends State<RunningPage> {
                       _metric("Steps", "$steps"),
                       _metric(
                         "Distance",
-                        "${_totalDistance.toStringAsFixed(1)} m",
+                        "${_totalDistance.toStringAsFixed(0)} m",
                       ),
                     ],
                   ),
@@ -845,7 +830,6 @@ class _RunningPageState extends State<RunningPage> {
                         if (!_isRunning) {
                           setState(() {
                             _selectedActivity = type;
-                            // Adjust step length based on activity type
                             _stepLength =
                                 type == ActivityType.run
                                     ? _averageStepLength + _stepLengthVariation

@@ -8,6 +8,7 @@ class KesanPesanPage extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Kesan & Pesan'),
+        automaticallyImplyLeading: false,
         centerTitle: true,
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
@@ -23,15 +24,7 @@ class KesanPesanPage extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text(
-                  'Kesan & Pesan',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.tealAccent,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
+                
                 const SizedBox(height: 24),
                 const Text(
                   'Kesan:\n'
@@ -55,7 +48,7 @@ class KesanPesanPage extends StatelessWidget {
                   icon: const Icon(Icons.arrow_back),
                   label: const Text('Kembali'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.tealAccent,
+                    backgroundColor: Colors.white,
                     foregroundColor: Colors.black,
                   ),
                 ),
