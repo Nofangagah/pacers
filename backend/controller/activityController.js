@@ -113,6 +113,15 @@ const saveActivity = async (req, res) => {
     // Hapus 'tracking_mode' dari destructuring
     const { title, type, duration, date, userId, distance, caloriesBurned, path, avr_pace, steps } = req.body;
 
+    function _getDurationBetweenPoints(path, startIndex, endIndex, totalDuration) {
+    if (path.length === 0 || startIndex >= path.length || endIndex >= path.length) {
+        return 0;
+    }
+    const totalPoints = path.length;
+    const pointsInSegment = endIndex - startIndex + 1;
+    return (pointsInSegment / totalPoints) * totalDuration;
+}
+
     // Tambahkan validasi untuk setiap field yang diterima
     if (
         title === undefined || type === undefined || duration === undefined ||

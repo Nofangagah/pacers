@@ -48,7 +48,7 @@ Future<http.Response> _sendRequest(
     case 'GET':
       return http.get(url, headers: headers);
     case 'POST':
-      return http.post(url, headers: headers, body: jsonEncode(body));
+      return http.post(url, headers: headers, body: body);
     case 'PUT':
       return http.put(url, headers: headers, body: jsonEncode(body));
     case 'DELETE':
