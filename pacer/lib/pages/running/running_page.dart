@@ -22,7 +22,8 @@ const double _maxAcceptableAccuracy = 25.0; // meters (more lenient for indoor)
 const int _minLocationUpdateIntervalSeconds = 2; // More frequent updates
 
 // Constants for stationary detection (accelerometer)
-const double _stationaryAccelerometerThreshold = 0.15; // Lower threshold for indoor
+const double _stationaryAccelerometerThreshold =
+    0.15; // Lower threshold for indoor
 const int _accelerometerWindowSize = 50; // Smaller window for faster response
 const int _stationaryCheckDurationMs = 500; // Faster checks
 
@@ -127,46 +128,47 @@ class _RunningPageState extends State<RunningPage> {
 
     final shouldSave = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text("Save Activity"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: _titleController,
-              decoration: const InputDecoration(
-                labelText: "Activity Title",
-                hintText: "Example: Morning Run",
-                border: OutlineInputBorder(),
-              ),
+      builder:
+          (context) => AlertDialog(
+            title: const Text("Save Activity"),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: _titleController,
+                  decoration: const InputDecoration(
+                    labelText: "Activity Title",
+                    hintText: "Example: Morning Run",
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text("Total Distance: ${_totalDistance.toStringAsFixed(1)} m"),
+                Text("Duration: ${_formatDuration(_stopwatch.elapsed)}"),
+                Text("Steps: $steps"),
+                Text("Calories: $calories cal"),
+                Text("Tracking Mode: ${_usingGps ? 'GPS' : 'Step-based'}"),
+              ],
             ),
-            const SizedBox(height: 16),
-            Text("Total Distance: ${_totalDistance.toStringAsFixed(1)} m"),
-            Text("Duration: ${_formatDuration(_stopwatch.elapsed)}"),
-            Text("Steps: $steps"),
-            Text("Calories: $calories cal"),
-            Text("Tracking Mode: ${_usingGps ? 'GPS' : 'Step-based'}"),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text("Cancel"),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  if (_titleController.text.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Title cannot be empty!")),
+                    );
+                    return;
+                  }
+                  Navigator.pop(context, true);
+                },
+                child: const Text("Save"),
+              ),
+            ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              if (_titleController.text.isEmpty) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Title cannot be empty!")),
-                );
-                return;
-              }
-              Navigator.pop(context, true);
-            },
-            child: const Text("Save"),
-          ),
-        ],
-      ),
     );
 
     if (shouldSave != true) {
@@ -190,30 +192,50 @@ class _RunningPageState extends State<RunningPage> {
           activityType = "ride";
           break;
       }
+      List<Map<String, double>> pathData = [];
+      if (_usingGps && _routePoints.isNotEmpty) {
+        pathData =
+            _routePoints
+                .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+                .toList();
+      } else if (!_usingGps) {
+        // Jika tidak menggunakan GPS, path bisa saja kosong atau hanya 1 titik, tergantung kebutuhan
+        // Untuk saat ini, asumsikan kosong jika tidak GPS dan tidak ada route points
+        pathData = [];
+      }
+      print('CLIENT UI: Preparing activity data:');
+      print('  Title: ${_titleController.text}');
+      print('  Type: $activityType');
+      print('  Distance: $_totalDistance');
+      print('  Duration: ${_stopwatch.elapsed.inSeconds}');
+      print('  Calories: $calories');
+      print('  Steps: $steps');
+      print('  Avg Pace: $avgPace');
+      print('  Path points count: ${pathData.length}');
+      print('  Date: ${DateTime.now().toIso8601String()}');
+      print('  UserId: $userId');
 
-      final activityData = {
-        'title': _titleController.text.isNotEmpty
-            ? _titleController.text
-            : generateDefaultTitle(activityType, _totalDistance),
-        'type': activityType,
-        'distance': _totalDistance,
-        'duration': _stopwatch.elapsed.inSeconds,
-        'caloriesBurned': calories,
-        'steps': steps,
-        'avr_pace': avgPace,
-        'path': _routePoints.map((p) => {
-              'lat': p.latitude,
-              'lng': p.longitude,
-            }).toList(),
-        'date': DateTime.now().toIso8601String(),
-        'userId': userId,
-        'createdAt': DateTime.now().toIso8601String(),
-        'updatedAt': DateTime.now().toIso8601String(),
-        'tracking_mode': _usingGps ? 'gps' : 'step',
-      };
-
-      final activity = ActivityModel.fromJson(activityData);
-      validateActivity(activity);
+      final activity = ActivityModel(
+        title:
+            _titleController.text.isNotEmpty
+                ? _titleController.text
+                : generateDefaultTitle(activityType, _totalDistance),
+        type: activityType,
+        distance: _totalDistance,
+        duration: _stopwatch.elapsed.inSeconds,
+        caloriesBurned: calories,
+        steps: steps,
+        avr_pace: avgPace,
+        path: pathData, // Mengirimkan data path yang sudah diproses
+        date: DateTime.now().toIso8601String(),
+        userId: userId,
+        createdAt: DateTime.now().toIso8601String(),
+        updatedAt: DateTime.now().toIso8601String(),
+        // Hapus 'tracking_mode: _usingGps ? 'gps' : 'step',' dari sini
+      );
+      print('CLIENT UI: ActivityModel object to be sent: ${activity.toJson()}');
+      final activityFinal = ActivityModel.fromJson(activity.toJson());
+      validateActivity(activityFinal);
 
       await ActivityService.saveActivity(activity);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -230,7 +252,8 @@ class _RunningPageState extends State<RunningPage> {
 
   void validateActivity(ActivityModel activity) {
     if (activity.title.isEmpty) throw Exception('Title cannot be empty!');
-    if (activity.type.isEmpty) throw Exception('Activity type cannot be empty!');
+    if (activity.type.isEmpty)
+      throw Exception('Activity type cannot be empty!');
   }
 
   String generateDefaultTitle(String activityType, double distance) {
@@ -274,7 +297,7 @@ class _RunningPageState extends State<RunningPage> {
           setState(() {
             steps = newSteps;
             _lastStepCount = newSteps;
-            
+
             // Update step-based distance
             if (!_usingGps) {
               _stepBasedDistance += stepDifference * _stepLength;
@@ -305,11 +328,11 @@ class _RunningPageState extends State<RunningPage> {
     });
 
     _stationaryCheckTimer = Timer.periodic(
-      Duration(milliseconds: _stationaryCheckDurationMs), 
+      Duration(milliseconds: _stationaryCheckDurationMs),
       (_) {
         if (!mounted) return;
         _checkStationary();
-      }
+      },
     );
   }
 
@@ -350,7 +373,11 @@ class _RunningPageState extends State<RunningPage> {
     if (await perm_handler.Permission.location.isPermanentlyDenied) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Location permission permanently denied. Please enable in settings.")),
+          const SnackBar(
+            content: Text(
+              "Location permission permanently denied. Please enable in settings.",
+            ),
+          ),
         );
       }
       perm_handler.openAppSettings();
@@ -360,7 +387,11 @@ class _RunningPageState extends State<RunningPage> {
     if (await perm_handler.Permission.activityRecognition.request().isDenied) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Activity recognition permission denied. Pedometer may not work.")),
+          const SnackBar(
+            content: Text(
+              "Activity recognition permission denied. Pedometer may not work.",
+            ),
+          ),
         );
       }
       return;
@@ -385,7 +416,9 @@ class _RunningPageState extends State<RunningPage> {
       if (permissionGranted != PermissionStatus.granted) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Location permission from plugin denied.")),
+            const SnackBar(
+              content: Text("Location permission from plugin denied."),
+            ),
           );
         }
         return;
@@ -421,7 +454,7 @@ class _RunningPageState extends State<RunningPage> {
 
       // Check if GPS signal is lost
       final now = DateTime.now();
-      if (_lastAccuracy > _maxAcceptableAccuracy * 2 || 
+      if (_lastAccuracy > _maxAcceptableAccuracy * 2 ||
           (newLat == null || newLng == null)) {
         if (!_gpsSignalLost) {
           setState(() {
@@ -438,21 +471,27 @@ class _RunningPageState extends State<RunningPage> {
       }
 
       // Switch to step-based tracking if GPS is unreliable for too long
-      if (_gpsSignalLost && 
-          _lastGoodGpsTime != null && 
+      if (_gpsSignalLost &&
+          _lastGoodGpsTime != null &&
           now.difference(_lastGoodGpsTime!).inSeconds > 30) {
         if (_usingGps) {
           setState(() {
             _usingGps = false;
           });
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text("Switching to step-based tracking due to poor GPS signal")),
+            const SnackBar(
+              content: Text(
+                "Switching to step-based tracking due to poor GPS signal",
+              ),
+            ),
           );
         }
         return;
       }
 
-      if (newLat == null || newLng == null || _lastAccuracy > _maxAcceptableAccuracy) {
+      if (newLat == null ||
+          newLng == null ||
+          _lastAccuracy > _maxAcceptableAccuracy) {
         return;
       }
 
@@ -465,16 +504,25 @@ class _RunningPageState extends State<RunningPage> {
           _lastGoodGpsTime = now;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("GPS signal restored, switching back to GPS tracking")),
+          const SnackBar(
+            content: Text(
+              "GPS signal restored, switching back to GPS tracking",
+            ),
+          ),
         );
       }
 
-      final movedEnough = _currentPosition == null ||
-          Distance().as(LengthUnit.Meter, _currentPosition!, newPosition) >= _minDistanceForRouteUpdate;
+      final movedEnough =
+          _currentPosition == null ||
+          Distance().as(LengthUnit.Meter, _currentPosition!, newPosition) >=
+              _minDistanceForRouteUpdate;
 
-      final timeElapsedEnough = DateTime.now().difference(_lastPointTime).inSeconds >= _minLocationUpdateIntervalSeconds;
+      final timeElapsedEnough =
+          DateTime.now().difference(_lastPointTime).inSeconds >=
+          _minLocationUpdateIntervalSeconds;
 
-      final shouldAddPoint = _isRunning &&
+      final shouldAddPoint =
+          _isRunning &&
           _usingGps &&
           movedEnough &&
           timeElapsedEnough &&
@@ -484,7 +532,11 @@ class _RunningPageState extends State<RunningPage> {
         if (shouldAddPoint) {
           if (_routePoints.isNotEmpty) {
             final lastPoint = _routePoints.last;
-            final distance = Distance().as(LengthUnit.Meter, lastPoint, newPosition);
+            final distance = Distance().as(
+              LengthUnit.Meter,
+              lastPoint,
+              newPosition,
+            );
             if (distance > _minDistanceForRouteUpdate) {
               _totalDistance += distance;
             }
@@ -557,24 +609,26 @@ class _RunningPageState extends State<RunningPage> {
       });
     });
 
-    _stepCountStream.first.then((initial) {
-      if (mounted && _isRunning) {
-        setState(() {
-          _startSteps = initial.steps;
-          _startStepsInitialized = true;
+    _stepCountStream.first
+        .then((initial) {
+          if (mounted && _isRunning) {
+            setState(() {
+              _startSteps = initial.steps;
+              _startStepsInitialized = true;
+            });
+          }
+        })
+        .catchError((e) {
+          if (mounted) {
+            setState(() {
+              _startSteps = 0;
+              _startStepsInitialized = true;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Pedometer unavailable or failed: $e")),
+            );
+          }
         });
-      }
-    }).catchError((e) {
-      if (mounted) {
-        setState(() {
-          _startSteps = 0;
-          _startStepsInitialized = true;
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("Pedometer unavailable or failed: $e")),
-        );
-      }
-    });
   }
 
   void _stopRun() {
@@ -592,7 +646,8 @@ class _RunningPageState extends State<RunningPage> {
       "${d.inMinutes.toString().padLeft(2, '0')}:${(d.inSeconds % 60).toString().padLeft(2, '0')}";
 
   String _formatPace(double paceInMinutesPerKm) {
-    if (paceInMinutesPerKm <= 0 || !paceInMinutesPerKm.isFinite) return "00:00 min/km";
+    if (paceInMinutesPerKm <= 0 || !paceInMinutesPerKm.isFinite)
+      return "00:00 min/km";
     final minutes = paceInMinutesPerKm.floor();
     final seconds = ((paceInMinutesPerKm - minutes) * 60).round();
     return "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')} min/km";
@@ -638,11 +693,12 @@ class _RunningPageState extends State<RunningPage> {
                         ? "Acquiring location..."
                         : "GPS ${_usingGps ? 'Active' : 'Inactive'} (Accuracy: ${_lastAccuracy.toStringAsFixed(1)}m)",
                     style: TextStyle(
-                      color: _currentPosition == null 
-                          ? Colors.grey 
-                          : (_lastAccuracy > _maxAcceptableAccuracy 
-                              ? Colors.orange 
-                              : Colors.green),
+                      color:
+                          _currentPosition == null
+                              ? Colors.grey
+                              : (_lastAccuracy > _maxAcceptableAccuracy
+                                  ? Colors.orange
+                                  : Colors.green),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -667,105 +723,109 @@ class _RunningPageState extends State<RunningPage> {
                         ),
                       ),
                       _metric("Calories", "$calories cal"),
-                      _metric(
-                        "Avg. Pace",
-                        _formatPace(avgPace),
-                      ),
+                      _metric("Avg. Pace", _formatPace(avgPace)),
                       _metric("Steps", "$steps"),
-                      _metric("Distance", "${_totalDistance.toStringAsFixed(1)} m"),
+                      _metric(
+                        "Distance",
+                        "${_totalDistance.toStringAsFixed(1)} m",
+                      ),
                     ],
                   ),
                 ],
               ),
             ),
             Expanded(
-              child: _currentPosition == null && _usingGps
-                  ? const Center(child: CircularProgressIndicator())
-                  : FlutterMap(
-                      mapController: _mapController,
-                      options: MapOptions(
-                        initialCenter: _currentPosition ?? const LatLng(0, 0),
-                        initialZoom: _initialMapZoom,
-                      ),
-                      children: [
-                        TileLayer(
-                          urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          subdomains: const ['a', 'b', 'c'],
-                          userAgentPackageName: 'com.example.app',
+              child:
+                  _currentPosition == null && _usingGps
+                      ? const Center(child: CircularProgressIndicator())
+                      : FlutterMap(
+                        mapController: _mapController,
+                        options: MapOptions(
+                          initialCenter: _currentPosition ?? const LatLng(0, 0),
+                          initialZoom: _initialMapZoom,
                         ),
-                        if (_routePoints.isNotEmpty)
-                          PolylineLayer(
-                            polylines: [
-                              Polyline(
-                                points: _routePoints,
-                                color: _usingGps ? Colors.blue : Colors.orange,
-                                strokeWidth: _polylineStrokeWidth,
-                              ),
-                            ],
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                            subdomains: const ['a', 'b', 'c'],
+                            userAgentPackageName: 'com.example.app',
                           ),
-                        if (_currentPosition != null)
-                          MarkerLayer(
-                            markers: [
-                              Marker(
-                                point: _currentPosition!,
-                                width: 60,
-                                height: 60,
-                                child: Icon(
-                                  Icons.location_pin,
-                                  color: _usingGps ? Colors.red : Colors.orange,
-                                  size: 40,
+                          if (_routePoints.isNotEmpty)
+                            PolylineLayer(
+                              polylines: [
+                                Polyline(
+                                  points: _routePoints,
+                                  color:
+                                      _usingGps ? Colors.blue : Colors.orange,
+                                  strokeWidth: _polylineStrokeWidth,
                                 ),
-                              ),
-                              if (_startPosition != null)
+                              ],
+                            ),
+                          if (_currentPosition != null)
+                            MarkerLayer(
+                              markers: [
                                 Marker(
-                                  point: _startPosition!,
-                                  width: 80,
-                                  height: 80,
-                                  child: Column(
-                                    children: const [
-                                      Icon(
-                                        Icons.flag,
-                                        color: Colors.green,
-                                        size: 30,
-                                      ),
-                                      Text(
-                                        'Start',
-                                        style: TextStyle(
-                                          fontSize: 12,
+                                  point: _currentPosition!,
+                                  width: 60,
+                                  height: 60,
+                                  child: Icon(
+                                    Icons.location_pin,
+                                    color:
+                                        _usingGps ? Colors.red : Colors.orange,
+                                    size: 40,
+                                  ),
+                                ),
+                                if (_startPosition != null)
+                                  Marker(
+                                    point: _startPosition!,
+                                    width: 80,
+                                    height: 80,
+                                    child: Column(
+                                      children: const [
+                                        Icon(
+                                          Icons.flag,
                                           color: Colors.green,
-                                          fontWeight: FontWeight.bold,
+                                          size: 30,
                                         ),
-                                      ),
-                                    ],
+                                        Text(
+                                          'Start',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.green,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              if (_finishPosition != null)
-                                Marker(
-                                  point: _finishPosition!,
-                                  width: 80,
-                                  height: 80,
-                                  child: Column(
-                                    children: const [
-                                      Icon(
-                                        Icons.flag,
-                                        color: Colors.blue,
-                                        size: 30,
-                                      ),
-                                      Text(
-                                        'Finish',
-                                        style: TextStyle(
-                                          fontSize: 12,
+                                if (_finishPosition != null)
+                                  Marker(
+                                    point: _finishPosition!,
+                                    width: 80,
+                                    height: 80,
+                                    child: Column(
+                                      children: const [
+                                        Icon(
+                                          Icons.flag,
                                           color: Colors.blue,
-                                          fontWeight: FontWeight.bold,
+                                          size: 30,
                                         ),
-                                      ),
-                                    ],
+                                        Text(
+                                          'Finish',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.blue,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                            ],
-                          ),
-                      ],
-                    ),
+                              ],
+                            ),
+                        ],
+                      ),
             ),
             const SizedBox(height: 12),
             Center(
@@ -786,10 +846,12 @@ class _RunningPageState extends State<RunningPage> {
                           setState(() {
                             _selectedActivity = type;
                             // Adjust step length based on activity type
-                            _stepLength = type == ActivityType.run 
-                                ? _averageStepLength + _stepLengthVariation
-                                : type == ActivityType.ride
-                                    ? _averageStepLength * 2.5 // Longer for biking
+                            _stepLength =
+                                type == ActivityType.run
+                                    ? _averageStepLength + _stepLengthVariation
+                                    : type == ActivityType.ride
+                                    ? _averageStepLength *
+                                        2.5 // Longer for biking
                                     : _averageStepLength;
                           });
                         }
@@ -802,7 +864,10 @@ class _RunningPageState extends State<RunningPage> {
                           color: isSelected ? Colors.black : Colors.white,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: isSelected ? Colors.black : Colors.grey.shade400,
+                            color:
+                                isSelected
+                                    ? Colors.black
+                                    : Colors.grey.shade400,
                             width: 1.5,
                           ),
                         ),
@@ -835,9 +900,10 @@ class _RunningPageState extends State<RunningPage> {
             Padding(
               padding: const EdgeInsets.all(12.0),
               child: ElevatedButton.icon(
-                onPressed: (_currentPosition == null && _usingGps)
-                    ? null
-                    : (_isRunning ? _stopRun : _startRun),
+                onPressed:
+                    (_currentPosition == null && _usingGps)
+                        ? null
+                        : (_isRunning ? _stopRun : _startRun),
                 icon: Icon(
                   _isRunning ? Icons.stop : Icons.play_arrow,
                   color: Colors.black,

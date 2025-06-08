@@ -105,28 +105,49 @@ const getActivityById = async (req, res) => {
 
 // POST new activity with optional segments
 // POST new activity with auto segment per 1km
+
 const saveActivity = async (req, res) => {
+    // Log body request yang diterima dari client
+    console.log('SERVER: Received request body for saveActivity:', JSON.stringify(req.body, null, 2));
+
+    // Hapus 'tracking_mode' dari destructuring
     const { title, type, duration, date, userId, distance, caloriesBurned, path, avr_pace, steps } = req.body;
 
+    // Tambahkan validasi untuk setiap field yang diterima
+    if (
+        title === undefined || type === undefined || duration === undefined ||
+        date === undefined || userId === undefined || distance === undefined ||
+        caloriesBurned === undefined || path === undefined || avr_pace === undefined ||
+        steps === undefined
+    ) {
+        console.error('SERVER: Validation Error: All fields are required.');
+        return res.status(400).json({ message: 'All fields are required' });
+    }
+
+    const validTypes = ['run', 'walk', 'ride'];
+    if (!validTypes.includes(type)) {
+        console.error(`SERVER: Validation Error: Invalid activity type received: ${type}`);
+        return res.status(400).json({ message: 'Invalid activity type' });
+    }
+
+    // Pastikan `path` adalah array dan setiap elemen memiliki `lat` dan `lng`
+    if (!Array.isArray(path) || path.some(p => typeof p.lat === 'undefined' || typeof p.lng === 'undefined')) {
+        console.error('SERVER: Validation Error: Path must be an array of objects with lat and lng properties.');
+        return res.status(400).json({ message: 'Invalid path data format' });
+    }
+    
+    console.log(`SERVER: Attempting to save activity for userId: ${userId}`);
+
     try {
-        const validTypes = ['run', 'walk', 'ride'];
-        if (!validTypes.includes(type)) {
-            return res.status(400).json({ message: 'Invalid activity type' });
-        }
-
-        if (
-            title === undefined || type === undefined || duration === undefined ||
-            date === undefined || userId === undefined || distance === undefined ||
-            caloriesBurned === undefined || path === undefined || avr_pace === undefined || steps === undefined
-        ) {
-            return res.status(400).json({ message: 'All fields are required' });
-        }
-
         const user = await Users.findByPk(userId);
         if (!user) {
+            console.error(`SERVER: User not found for ID: ${userId}`);
             return res.status(404).json({ message: 'User not found' });
         }
+        console.log(`SERVER: User found: ${user.username} (ID: ${user.id})`);
 
+        // Mencoba membuat entri aktivitas baru
+        console.log('SERVER: Creating new activity entry in database...');
         const newActivity = await Activity.create({
             title,
             type,
@@ -137,69 +158,97 @@ const saveActivity = async (req, res) => {
             caloriesBurned,
             avr_pace,
             steps,
-            path: JSON.stringify(path),
+            path: JSON.stringify(path), // Simpan array path sebagai string JSON
+            // Hapus 'tracking_mode' di sini
         });
+        console.log('SERVER: New activity created successfully:', newActivity.toJSON());
 
-        // Auto segmentasi per 1 KM jika path cukup
-        if (path.length >= 2) {
+        // --- Segmentasi per 1 KM ---
+        if (path.length >= 2 && distance > 0) { // Pastikan ada path dan totalDistance lebih dari 0 untuk mencegah pembagian nol
+            console.log('SERVER: Starting activity segmentation...');
             let segments = [];
-            let segmentDistance = 0;
-            let totalDistance = 0;
-            const totalDuration = duration;
-            let segmentStartIndex = 0;
+            let segmentDistanceAccumulator = 0; // Jarak yang terakumulasi dalam segmen saat ini (dalam KM)
+            let currentSegmentPoints = []; // Titik-titik untuk segmen saat ini
+            let segmentStartTime = 0; // Waktu mulai untuk segmen saat ini
 
-            for (let i = 1; i < path.length; i++) {
-                const prev = path[i - 1];
-                const curr = path[i];
+            for (let i = 0; i < path.length; i++) {
+                currentSegmentPoints.push(path[i]);
 
-                const d = getDistanceFromLatLonInKm(prev.lat, prev.lng, curr.lat, curr.lng);
-                segmentDistance += d;
-                totalDistance += d;
+                if (i > 0) {
+                    const prev = path[i - 1];
+                    const curr = path[i];
+                    const d = getDistanceFromLatLonInKm(prev.lat, prev.lng, curr.lat, curr.lng); // Jarak dalam KM
+                    segmentDistanceAccumulator += d;
+                }
 
-                if (segmentDistance >= 1.0) {
-                    const segmentRatio = segmentDistance / distance;
-                    const segmentDuration = Math.round(segmentRatio * totalDuration);
-                    const pace = parseFloat(((segmentDuration / 60) / segmentDistance).toFixed(2));
+                // Cek jika segmen sudah mencapai 1 KM atau ini adalah titik terakhir
+                if (segmentDistanceAccumulator >= 1.0 || i === path.length - 1) {
+                    if (currentSegmentPoints.length > 1) { // Pastikan ada setidaknya 2 titik untuk segmen
+                        const segmentDuration = Math.round((_getDurationBetweenPoints(path, segmentStartTime, i, duration) / 1000) * duration); // Durasi segmen
+                        const pace = segmentDistanceAccumulator > 0 ? parseFloat(((segmentDuration / 60) / segmentDistanceAccumulator).toFixed(2)) : 0; // Pace dalam menit/km
 
-                    await ActivitySegment.create({
-                        activityId: newActivity.id,
-                        segment_number: segments.length + 1,
-                        distance: parseFloat(segmentDistance.toFixed(2)),
-                        duration: segmentDuration,
-                        pace,
-                    });
+                        console.log(`SERVER: Creating segment ${segments.length + 1}: Distance=${segmentDistanceAccumulator.toFixed(2)} KM, Duration=${segmentDuration}s, Pace=${pace} min/km`);
 
-                    segments.push(segmentDistance);
+                        await ActivitySegment.create({
+                            activityId: newActivity.id,
+                            segment_number: segments.length + 1,
+                            distance: parseFloat(segmentDistanceAccumulator.toFixed(2)),
+                            duration: segmentDuration,
+                            pace,
+                            // Anda mungkin ingin menyimpan path segmen juga, tapi ini bisa memperbesar DB
+                            // segment_path: JSON.stringify(currentSegmentPoints), 
+                        });
 
-                    // Reset segment distance
-                    segmentDistance = 0;
+                        segments.push({
+                            distance: segmentDistanceAccumulator,
+                            duration: segmentDuration,
+                            pace
+                        });
 
-                    // Start next segment from current point
-                    segmentStartIndex = i;
+                        // Reset untuk segmen berikutnya
+                        segmentDistanceAccumulator = 0;
+                        currentSegmentPoints = [path[i]]; // Titik saat ini menjadi titik awal segmen berikutnya
+                        segmentStartTime = i; // Titik saat ini menjadi titik awal waktu untuk durasi
+                    } else if (i === path.length - 1 && segmentDistanceAccumulator > 0) {
+                        // Handle kasus segmen terakhir yang mungkin kurang dari 1km tapi memiliki jarak
+                        const segmentDuration = Math.round((_getDurationBetweenPoints(path, segmentStartTime, i, duration) / 1000) * duration);
+                        const pace = segmentDistanceAccumulator > 0 ? parseFloat(((segmentDuration / 60) / segmentDistanceAccumulator).toFixed(2)) : 0;
+
+                        console.log(`SERVER: Creating final partial segment ${segments.length + 1}: Distance=${segmentDistanceAccumulator.toFixed(2)} KM, Duration=${segmentDuration}s, Pace=${pace} min/km`);
+
+                        await ActivitySegment.create({
+                            activityId: newActivity.id,
+                            segment_number: segments.length + 1,
+                            distance: parseFloat(segmentDistanceAccumulator.toFixed(2)),
+                            duration: segmentDuration,
+                            pace,
+                        });
+                        segments.push({
+                            distance: segmentDistanceAccumulator,
+                            duration: segmentDuration,
+                            pace
+                        });
+                    }
                 }
             }
-
-            // Simpan segmen terakhir jika ada sisa
-            if (segmentDistance > 0.1) {
-                const segmentRatio = segmentDistance / distance;
-                const segmentDuration = Math.round(segmentRatio * totalDuration);
-                const pace = parseFloat(((segmentDuration / 60) / segmentDistance).toFixed(2));
-
-                await ActivitySegment.create({
-                    activityId: newActivity.id,
-                    segment_number: segments.length + 1,
-                    distance: parseFloat(segmentDistance.toFixed(2)),
-                    duration: segmentDuration,
-                    pace,
-                });
-            }
+            console.log('SERVER: Activity segmentation completed.');
+        } else {
+            console.log('SERVER: Skipping segmentation: Not enough path points or distance is zero.');
         }
 
+        // Kirim respon sukses
         res.status(201).json(newActivity);
+        console.log('SERVER: Activity saved and response sent successfully.');
+
     } catch (error) {
+        // Log error lengkap di server
+        console.error('SERVER: Error saving activity:', error);
+        console.error('SERVER: Error message:', error.message);
+        // Pastikan respon error juga JSON yang valid
         res.status(500).json({ message: 'Error saving activity', error: error.message });
     }
 };
+
 
 // Fungsi hitung jarak antar titik GPS (Haversine formula)
 function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
