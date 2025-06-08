@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:pacer/pages/kesan_pesan/kesan_pesan.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
@@ -91,6 +92,7 @@ class MyApp extends StatelessWidget {
         '/profile': (context) => const ProfilePage(),
         '/edit-profile': (context) => const EditProfilePage(),
         '/home': (context) => const HomePage(),
+        '/kesan-pesan': (context) => const KesanPesanPage(),
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/set-weight') {

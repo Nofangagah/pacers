@@ -14,14 +14,14 @@ class ActivityPage extends StatefulWidget {
 }
 
 class _ActivityPageState extends State<ActivityPage> {
-  late Future<List<activityModel>> _activities;
+  late Future<List<ActivityModel>> _activities;
 
   Future<String?> _getAccessToken() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString('accessToken');
   }
 
-  Future<List<activityModel>> _fetchActivities() async {
+  Future<List<ActivityModel>> _fetchActivities() async {
     final token = await _getAccessToken();
     if (token == null) throw Exception("Access token not found");
     return await ActivityService.getActivities(widget.userId);
@@ -48,8 +48,10 @@ class _ActivityPageState extends State<ActivityPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Activities'), centerTitle: true),
-      body: FutureBuilder<List<activityModel>>(
+      appBar: AppBar(title: const Text('My Activities'), centerTitle: true,
+      automaticallyImplyLeading: false,
+      ),
+      body: FutureBuilder<List<ActivityModel>>(
         future: _activities,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -61,7 +63,7 @@ class _ActivityPageState extends State<ActivityPage> {
             if (errorMessage.contains('Failed to load activities')) {
               // Fallback for empty activity or server returning an error
               return const Center(
-                child: Text('Belum ada aktivitas. Yuk mulai bergerak!'),
+                child: Text('There is no activity yet.'),
               );
             }
             return Center(child: Text('Terjadi kesalahan: $errorMessage'));
@@ -71,7 +73,7 @@ class _ActivityPageState extends State<ActivityPage> {
 
           if (activities.isEmpty) {
             return const Center(
-              child: Text('Belum ada aktivitas. Yuk mulai bergerak!'),
+              child: Text('There is no activity yet'),
             );
           }
 

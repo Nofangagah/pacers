@@ -19,80 +19,81 @@ class _LoginFormState extends State<LoginForm> {
   bool _isLoading = false;
 
   void _submit() async {
-  if (_formKey.currentState!.validate()) {
-    setState(() => _isLoading = true);
+    if (_formKey.currentState!.validate()) {
+      setState(() => _isLoading = true);
 
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
-    final name = _nameController.text.trim();
+      final email = _emailController.text.trim();
+      final password = _passwordController.text.trim();
+      final name = _nameController.text.trim();
 
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-      print('[LoginForm] SharedPreferences cleared');
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+        print('[LoginForm] SharedPreferences cleared');
 
-      Map<String, dynamic> result;
+        Map<String, dynamic> result;
 
-      if (widget.isRegister) {
-        print('[LoginForm] Register with name=$name, email=$email');
-        result = await AuthService.register(name, email, password);
-      } else {
-        print('[LoginForm] Login with email=$email');
-        result = await AuthService.login(email, password);
-      }
-
-      print('[LoginForm] Result from AuthService: $result');
-
-      if (!mounted) return;
-
-      setState(() => _isLoading = false);
-
-      if (result['success']) {
         if (widget.isRegister) {
-          print('[LoginForm] Registration successful');
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Registration successful, please login.'),
-            ),
-          );
-          Navigator.pushReplacementNamed(context, '/login');
+          print('[LoginForm] Register with name=$name, email=$email');
+          result = await AuthService.register(name, email, password);
         } else {
-          print('[LoginForm] Login successful, checking user data in prefs');
+          print('[LoginForm] Login with email=$email');
+          result = await AuthService.login(email, password);
+        }
 
-          final userWeight = prefs.getDouble('userWeight') ?? 0;
-          final userId = prefs.getInt('userId');
+        print('[LoginForm] Result from AuthService: $result');
 
-          print('[LoginForm] userWeight=$userWeight, userId=$userId');
+        if (!mounted) return;
 
-          if (userWeight <= 0) {
-            print('[LoginForm] Redirecting to /set-weight');
-            Navigator.pushReplacementNamed(
-              context,
-              '/set-weight',
-              arguments: {'userId': userId},
+        setState(() => _isLoading = false);
+
+        if (result['success']) {
+          if (widget.isRegister) {
+            print('[LoginForm] Registration successful');
+            // Langsung pindah ke halaman login tanpa delay
+            Navigator.pushReplacementNamed(context, '/login');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Registration successful, please login.'),
+                duration: Duration(seconds: 2),
+              ),
             );
           } else {
-            print('[LoginForm] Redirecting to /home');
-            Navigator.pushReplacementNamed(context, '/home');
+            print('[LoginForm] Login successful, checking user data in prefs');
+
+            final userWeight = prefs.getDouble('userWeight') ?? 0;
+            final userId = prefs.getInt('userId');
+
+            print('[LoginForm] userWeight=$userWeight, userId=$userId');
+
+            if (userWeight <= 0) {
+              print('[LoginForm] Redirecting to /set-weight');
+              Navigator.pushReplacementNamed(
+                context,
+                '/set-weight',
+                arguments: {'userId': userId},
+              );
+            } else {
+              print('[LoginForm] Redirecting to /home');
+              Navigator.pushReplacementNamed(context, '/home');
+            }
           }
+        } else {
+          print('[LoginForm] Auth failed: ${result['message']}');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(result['message'] ?? 'Unknown error')),
+          );
         }
-      } else {
-        print('[LoginForm] Auth failed: ${result['message']}');
+      } catch (e, stacktrace) {
+        setState(() => _isLoading = false);
+        print('[LoginForm] Exception during submit: $e');
+        print(stacktrace);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(result['message'] ?? 'Unknown error')),
+          SnackBar(content: Text('Error: $e')),
         );
       }
-    } catch (e, stacktrace) {
-      setState(() => _isLoading = false);
-      print('[LoginForm] Exception during submit: $e');
-      print(stacktrace);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
     }
   }
-}
-
 
   InputDecoration _inputDecoration(String label) {
     return InputDecoration(
@@ -160,16 +161,15 @@ class _LoginFormState extends State<LoginForm> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              child:
-                  _isLoading
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : Text(
-                        widget.isRegister ? 'Register' : 'Login',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
+              child: _isLoading
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : Text(
+                      widget.isRegister ? 'Register' : 'Login',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
                       ),
+                    ),
             ),
           ),
         ],

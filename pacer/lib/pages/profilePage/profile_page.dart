@@ -118,6 +118,28 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => Navigator.pushNamed(
+                          context,
+                          '/kesan-pesan',
+                        ),
+                        icon: const Icon(Icons.message, color: Colors.black),
+                        label: const Text(
+                          'Kesan & Pesan',
+                          style: TextStyle(color: Colors.black),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      )),
 
                     const SizedBox(height: 16),
                     SizedBox(

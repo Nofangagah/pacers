@@ -19,9 +19,13 @@ class _SetWeightPageState extends State<SetWeightPage> {
   void _saveWeight() async {
     final weight = double.tryParse(weightController.text);
     if (weight == null || weight <= 0 || weight > 200) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Berat badan tidak valid')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Berat badan tidak valid'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
       return;
     }
 
@@ -35,64 +39,91 @@ class _SetWeightPageState extends State<SetWeightPage> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setDouble('userWeight', weight);
 
-      // ✅ Tampilkan snackbar sukses
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Berat badan berhasil disimpan')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Berat badan berhasil disimpan'),
+          backgroundColor: Theme.of(context).colorScheme.primary,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
 
-      // ⏳ Tambahkan delay sedikit agar snackbar terlihat sebelum pindah halaman
-      await Future.delayed(Duration(seconds: 1));
+      await Future.delayed(const Duration(seconds: 1));
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => HomePage()),
+        MaterialPageRoute(builder: (_) => const HomePage()),
       );
     } else {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Gagal menyimpan berat badan')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Gagal menyimpan berat badan'),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
 
     setState(() => isLoading = false);
   }
 
-  // void _skip() {
-  //   Navigator.pushReplacement(
-  //     context,
-  //     MaterialPageRoute(builder: (_) => const HomePage()),
-  //   );
-  // }
-
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: Text('Atur Berat Badan')),
+      appBar: AppBar(
+        title: Text('Atur Berat Badan', style: theme.textTheme.titleLarge),
+        backgroundColor: theme.appBarTheme.backgroundColor,
+        foregroundColor: theme.appBarTheme.foregroundColor,
+        elevation: theme.appBarTheme.elevation,
+        iconTheme: theme.appBarTheme.iconTheme,
+      ),
+      backgroundColor: theme.scaffoldBackgroundColor,
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            Text('Masukkan berat badanmu (kg)', style: TextStyle(fontSize: 18)),
-            SizedBox(height: 16),
+            Text(
+              'Masukkan berat badanmu (kg)',
+              style: theme.textTheme.titleMedium,
+            ),
+            const SizedBox(height: 16),
             TextField(
               controller: weightController,
               keyboardType: TextInputType.number,
+              style: theme.textTheme.bodyMedium,
               decoration: InputDecoration(
                 hintText: 'Contoh: 70',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
+                filled: true,
+                fillColor: theme.inputDecorationTheme.fillColor ?? theme.cardColor,
+                hintStyle: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
               ),
             ),
-            SizedBox(height: 20),
+            const SizedBox(height: 20),
             isLoading
-                ? CircularProgressIndicator()
+                ? CircularProgressIndicator(
+                    valueColor: AlwaysStoppedAnimation<Color>(theme.colorScheme.primary),
+                  )
                 : Column(
-                  children: [
-                    ElevatedButton(
-                      onPressed: _saveWeight,
-                      child: Text('Simpan'),
-                    ),
-                    // TextButton(onPressed: _skip, child: Text('Lewati')),
-                  ],
-                ),
+                    children: [
+                      ElevatedButton(
+                        onPressed: _saveWeight,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: theme.colorScheme.primary,
+                          foregroundColor: theme.colorScheme.onPrimary,
+                          minimumSize: const Size(double.infinity, 48),
+                        ),
+                        child: Text(
+                          'Simpan',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            color: theme.colorScheme.onPrimary,
+                          ),
+                        ),
+                      ),
+                      // TextButton(onPressed: _skip, child: Text('Lewati')),
+                    ],
+                  ),
           ],
         ),
       ),

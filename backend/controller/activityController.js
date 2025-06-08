@@ -114,7 +114,11 @@ const saveActivity = async (req, res) => {
             return res.status(400).json({ message: 'Invalid activity type' });
         }
 
-        if (!title || !type || !duration || !date || !userId || !distance || !caloriesBurned || !path|| !avr_pace || !steps) {
+        if (
+            title === undefined || type === undefined || duration === undefined ||
+            date === undefined || userId === undefined || distance === undefined ||
+            caloriesBurned === undefined || path === undefined || avr_pace === undefined || steps === undefined
+        ) {
             return res.status(400).json({ message: 'All fields are required' });
         }
 

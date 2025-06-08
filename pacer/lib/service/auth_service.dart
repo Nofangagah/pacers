@@ -97,12 +97,13 @@ class AuthService {
         body: jsonEncode({'name': name, 'email': email, 'password': password}),
       );
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        await saveTokens(data['accessToken'], data['refreshToken']);
-        await saveUserData(data['user']);
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('loginMethod', 'manual');
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        // final data = jsonDecode(response.body);
+
+        // await saveTokens(data['accessToken'], data['refreshToken']);
+        // await saveUserData(data['user']);
+        // final prefs = await SharedPreferences.getInstance();
+        // await prefs.setString('loginMethod', 'manual');
 
         return {'success': true, 'message': 'Registrasi berhasil'};
       } else {

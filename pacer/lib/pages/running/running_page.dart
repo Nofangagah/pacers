@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -8,20 +7,44 @@ import 'package:location/location.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart' as perm_handler;
+import 'package:pacer/service/activity_service.dart';
+import 'package:pacer/models/activity_model.dart';
+import 'package:sensors_plus/sensors_plus.dart';
+
+// Constants for configuration
+const double _locationUpdateIntervalMs = 1000; // milliseconds
+const double _locationDistanceFilterMeters = 0.5; // meters
+const double _initialMapZoom = 16.0;
+const double _polylineStrokeWidth = 4.0;
+const double _minDistanceForRouteUpdate = 1.0; // meters
+const double _minSpeedThresholdMps = 0.3; // m/s (lower threshold for indoor)
+const double _maxAcceptableAccuracy = 25.0; // meters (more lenient for indoor)
+const int _minLocationUpdateIntervalSeconds = 2; // More frequent updates
+
+// Constants for stationary detection (accelerometer)
+const double _stationaryAccelerometerThreshold = 0.15; // Lower threshold for indoor
+const int _accelerometerWindowSize = 50; // Smaller window for faster response
+const int _stationaryCheckDurationMs = 500; // Faster checks
+
+// Constants for step length estimation
+const double _averageStepLength = 0.75; // meters (average for walking/running)
+const double _stepLengthVariation = 0.15; // meters (variation allowance)
 
 class RunningPage extends StatefulWidget {
   const RunningPage({super.key});
+
   @override
   _RunningPageState createState() => _RunningPageState();
 }
 
-enum ActivityType { jalan, lari, sepeda }
+enum ActivityType { walk, run, ride }
 
 class _RunningPageState extends State<RunningPage> {
   final Location _location = Location();
   LatLng? _currentPosition;
   LatLng? _startPosition;
   LatLng? _finishPosition;
+  final TextEditingController _titleController = TextEditingController();
 
   late final MapController _mapController;
   bool _isRunning = false;
@@ -31,36 +54,49 @@ class _RunningPageState extends State<RunningPage> {
   StreamSubscription<StepCount>? _stepCountSubscription;
   late Stream<StepCount> _stepCountStream;
 
+  // Variables for stationary detection
+  StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
+  List<AccelerometerEvent> _accelerometerReadings = [];
+  bool _isStationary = true;
+  Timer? _stationaryCheckTimer;
+
+  // Variables for step-based distance estimation
+  int _lastStepCount = 0;
+  double _stepBasedDistance = 0.0;
+  double _stepLength = _averageStepLength;
+
   int calories = 0;
   double avgPace = 0;
   double _totalDistance = 0.0;
   final List<LatLng> _routePoints = [];
+  DateTime _lastPointTime = DateTime.now();
 
   int steps = 0;
   int _startSteps = 0;
   bool _startStepsInitialized = false;
 
   Duration _elapsed = Duration.zero;
+  ActivityType _selectedActivity = ActivityType.run;
 
-  ActivityType _selectedActivity = ActivityType.lari;
+  // Tracking state
+  bool _usingGps = true; // Start with GPS by default
+  bool _gpsSignalLost = false;
+  DateTime? _lastGoodGpsTime;
 
   final Map<ActivityType, Map<String, dynamic>> _activityInfo = {
-    ActivityType.jalan: {"label": "Jalan", "icon": Icons.directions_walk},
-    ActivityType.lari: {"label": "Lari", "icon": Icons.directions_run},
-    ActivityType.sepeda: {"label": "Sepeda", "icon": Icons.directions_bike},
+    ActivityType.walk: {"label": "walk", "icon": Icons.directions_walk},
+    ActivityType.run: {"label": "run", "icon": Icons.directions_run},
+    ActivityType.ride: {"label": "ride", "icon": Icons.directions_bike},
   };
 
   final Map<ActivityType, double> _metRates = {
-    ActivityType.jalan: 3.8,
-    ActivityType.lari: 9.8,
-    ActivityType.sepeda: 7.5,
+    ActivityType.walk: 3.8,
+    ActivityType.run: 9.8,
+    ActivityType.ride: 7.5,
   };
 
-  late double _userWeightKg;
-  final prefs = SharedPreferences.getInstance();
-
-  bool _isSimulating = false;
-  Timer? _simulationTimer;
+  late double _userWeightKg = 70.0;
+  double _lastAccuracy = 0.0;
 
   @override
   void initState() {
@@ -69,109 +105,276 @@ class _RunningPageState extends State<RunningPage> {
     _stepCountStream = Pedometer.stepCountStream.asBroadcastStream();
     _initializeLocation();
     _initializePedometer();
+    _initializeAccelerometer();
     _loadUserWeight();
   }
 
   Future<void> _loadUserWeight() async {
     final prefs = await SharedPreferences.getInstance();
-    final double? userWeight = prefs.getDouble('userWeight');
-    print('User weight loaded✌️✌️✌️: $userWeight');
-
     setState(() {
-      _userWeightKg = userWeight ?? 70.0;
+      _userWeightKg = prefs.getDouble('userWeight') ?? 70.0;
     });
   }
 
-  // Future<void> saveActivity() async {
-  //   if (_routePoints.isEmpty) {
-  //     return;
-  //   }
-  //   try {
-  //     final prefs = await SharedPreferences.getInstance();
-  //     final int? userId = prefs.getInt('userId') ?? 0;
-  //     final Pathjson = jsonEncode(
-  //       _routePoints
-  //           .map(
-  //             (point) => {
-  //               'latitude': point.latitude,
-  //               'longitude': point.longitude,
-  //             },
-  //           )
-  //           .toList(),
-  //     );
-  //     String activitype;
-  //     switch (_selectedActivity) {
-  //       case ActivityType.jalan:
-  //         activitype = "walk";
-  //         break;
-  //       case ActivityType.lari:
-  //         activitype = "run";
-  //         break;
-  //       case ActivityType.sepeda:
-  //         activitype = "ride";
-  //         break;
-  //     }
+  Future<void> saveActivity() async {
+    if (_routePoints.length < 2 || _totalDistance < 10) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Activity too short to save.")),
+      );
+      _resetActivity();
+      return;
+    }
 
-  //     final activity = {
-  //       'userId': userId,
-  //       'activityType': activitype,
-  //       'startPosition': {
-  //         'latitude': _startPosition?.latitude,
-  //         'longitude': _startPosition?.longitude,
-  //       },
-  //       'finishPosition': {
-  //         'latitude': _finishPosition?.latitude,
-  //         'longitude': _finishPosition?.longitude,
-  //       },
-  //       'routePoints': Pathjson,
-  //       'calories': calories,
-  //       'avgPace': avgPace,
-  //       'totalDistance': _totalDistance,
-  //       'steps': steps,
-  //       'startSteps': _startSteps,
-  //       'elapsedTime': _stopwatch.elapsed.inSeconds,
-  //     };
-  //   } catch (e) {}
-  // }
+    final shouldSave = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Save Activity"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(
+                labelText: "Activity Title",
+                hintText: "Example: Morning Run",
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text("Total Distance: ${_totalDistance.toStringAsFixed(1)} m"),
+            Text("Duration: ${_formatDuration(_stopwatch.elapsed)}"),
+            Text("Steps: $steps"),
+            Text("Calories: $calories cal"),
+            Text("Tracking Mode: ${_usingGps ? 'GPS' : 'Step-based'}"),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (_titleController.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Title cannot be empty!")),
+                );
+                return;
+              }
+              Navigator.pop(context, true);
+            },
+            child: const Text("Save"),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldSave != true) {
+      _resetActivity();
+      return;
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final int? userId = prefs.getInt('userId');
+
+      String activityType;
+      switch (_selectedActivity) {
+        case ActivityType.walk:
+          activityType = "walk";
+          break;
+        case ActivityType.run:
+          activityType = "run";
+          break;
+        case ActivityType.ride:
+          activityType = "ride";
+          break;
+      }
+
+      final activityData = {
+        'title': _titleController.text.isNotEmpty
+            ? _titleController.text
+            : generateDefaultTitle(activityType, _totalDistance),
+        'type': activityType,
+        'distance': _totalDistance,
+        'duration': _stopwatch.elapsed.inSeconds,
+        'caloriesBurned': calories,
+        'steps': steps,
+        'avr_pace': avgPace,
+        'path': _routePoints.map((p) => {
+              'lat': p.latitude,
+              'lng': p.longitude,
+            }).toList(),
+        'date': DateTime.now().toIso8601String(),
+        'userId': userId,
+        'createdAt': DateTime.now().toIso8601String(),
+        'updatedAt': DateTime.now().toIso8601String(),
+        'tracking_mode': _usingGps ? 'gps' : 'step',
+      };
+
+      final activity = ActivityModel.fromJson(activityData);
+      validateActivity(activity);
+
+      await ActivityService.saveActivity(activity);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Activity saved successfully!")),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Failed to save: ${e.toString()}")),
+      );
+    } finally {
+      _resetActivity();
+    }
+  }
+
+  void validateActivity(ActivityModel activity) {
+    if (activity.title.isEmpty) throw Exception('Title cannot be empty!');
+    if (activity.type.isEmpty) throw Exception('Activity type cannot be empty!');
+  }
+
+  String generateDefaultTitle(String activityType, double distance) {
+    final activityNames = {'walk': 'walk', 'run': 'run', 'ride': 'ride'};
+    return "${activityNames[activityType]} ${(_totalDistance / 1000).toStringAsFixed(1)} km";
+  }
+
+  void _resetActivity() {
+    _titleController.clear();
+    _stopwatch.reset();
+    setState(() {
+      _isRunning = false;
+      _totalDistance = 0.0;
+      _stepBasedDistance = 0.0;
+      steps = 0;
+      calories = 0;
+      avgPace = 0;
+      _routePoints.clear();
+      _startPosition = null;
+      _finishPosition = null;
+      _elapsed = Duration.zero;
+      _lastPointTime = DateTime.now();
+      _isStationary = true;
+      _accelerometerReadings.clear();
+      _usingGps = true;
+      _gpsSignalLost = false;
+      _lastGoodGpsTime = null;
+    });
+  }
 
   void _initializePedometer() {
     _stepCountSubscription = _stepCountStream.listen(
       (event) {
-        if (_isRunning && _startStepsInitialized) {
+        if (!_isRunning || !_startStepsInitialized) return;
+
+        final newSteps = event.steps - _startSteps;
+        final stepDifference = newSteps - _lastStepCount;
+
+        if (stepDifference > 0) {
+          // Only update if steps increased
           setState(() {
-            steps = event.steps - _startSteps;
+            steps = newSteps;
+            _lastStepCount = newSteps;
+            
+            // Update step-based distance
+            if (!_usingGps) {
+              _stepBasedDistance += stepDifference * _stepLength;
+              _totalDistance = _stepBasedDistance;
+              _updateMetrics();
+            }
           });
         }
       },
-      onError: (error) => print("Step Count Error: $error"),
+      onError: (error) {
+        print("Step Count Error: $error");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Failed to get steps: $error")),
+          );
+        }
+      },
       cancelOnError: true,
     );
   }
 
+  void _initializeAccelerometer() {
+    _accelerometerSubscription = accelerometerEventStream().listen((event) {
+      _accelerometerReadings.add(event);
+      if (_accelerometerReadings.length > _accelerometerWindowSize) {
+        _accelerometerReadings.removeAt(0);
+      }
+    });
+
+    _stationaryCheckTimer = Timer.periodic(
+      Duration(milliseconds: _stationaryCheckDurationMs), 
+      (_) {
+        if (!mounted) return;
+        _checkStationary();
+      }
+    );
+  }
+
+  void _checkStationary() {
+    if (_accelerometerReadings.length < 5) {
+      _isStationary = true;
+      return;
+    }
+
+    double sumDelta = 0.0;
+    for (int i = 1; i < _accelerometerReadings.length; i++) {
+      final prev = _accelerometerReadings[i - 1];
+      final curr = _accelerometerReadings[i];
+      final deltaX = (curr.x - prev.x).abs();
+      final deltaY = (curr.y - prev.y).abs();
+      final deltaZ = (curr.z - prev.z).abs();
+      sumDelta += (deltaX + deltaY + deltaZ);
+    }
+
+    final averageDelta = sumDelta / (_accelerometerReadings.length - 1);
+
+    setState(() {
+      _isStationary = averageDelta < _stationaryAccelerometerThreshold;
+    });
+    _accelerometerReadings.clear();
+  }
+
   Future<void> _initializeLocation() async {
-    // Minta permission manual jika perlu
     if (await perm_handler.Permission.location.request().isDenied) {
-      print("❌ Permission lokasi ditolak.");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Location permission denied.")),
+        );
+      }
       return;
     }
 
     if (await perm_handler.Permission.location.isPermanentlyDenied) {
-      print("❌ Permission lokasi ditolak permanen. Minta buka settings.");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Location permission permanently denied. Please enable in settings.")),
+        );
+      }
       perm_handler.openAppSettings();
       return;
     }
 
     if (await perm_handler.Permission.activityRecognition.request().isDenied) {
-      print("❌ Permission activity recognition ditolak.");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Activity recognition permission denied. Pedometer may not work.")),
+        );
+      }
       return;
     }
 
-    // Cek dan minta akses lokasi dari plugin location
     bool serviceEnabled = await _location.serviceEnabled();
     if (!serviceEnabled) {
       serviceEnabled = await _location.requestService();
       if (!serviceEnabled) {
-        print("❌ Layanan lokasi tidak diaktifkan.");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Location service not enabled.")),
+          );
+        }
         return;
       }
     }
@@ -180,156 +383,166 @@ class _RunningPageState extends State<RunningPage> {
     if (permissionGranted == PermissionStatus.denied) {
       permissionGranted = await _location.requestPermission();
       if (permissionGranted != PermissionStatus.granted) {
-        print("❌ Izin lokasi dari plugin Location ditolak.");
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Location permission from plugin denied.")),
+          );
+        }
         return;
       }
     }
 
-    // Lanjut dengan setup lokasi
-    await _location.changeSettings(interval: 1000, distanceFilter: 0.1);
+    await _location.changeSettings(
+      interval: _locationUpdateIntervalMs.toInt(),
+      distanceFilter: _locationDistanceFilterMeters,
+      accuracy: LocationAccuracy.high,
+    );
 
     final locationData = await _location.getLocation();
     if (locationData.latitude != null && locationData.longitude != null) {
       final pos = LatLng(locationData.latitude!, locationData.longitude!);
       setState(() {
         _currentPosition = pos;
+        _lastAccuracy = locationData.accuracy ?? 0.0;
+        _lastGoodGpsTime = DateTime.now();
       });
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted && _mapController.camera != null) {
-          _mapController.move(pos, 16);
+          _mapController.move(pos, _initialMapZoom);
         }
       });
-      print("📍 Lokasi awal: $_currentPosition");
     }
 
     _locationSubscription = _location.onLocationChanged.listen((locationData) {
-      if (_isSimulating) return;
-
       final newLat = locationData.latitude;
       final newLng = locationData.longitude;
+      _lastAccuracy = locationData.accuracy ?? 0.0;
+      final currentSpeed = locationData.speed ?? 0.0;
 
-      if (newLat == null || newLng == null) return;
+      // Check if GPS signal is lost
+      final now = DateTime.now();
+      if (_lastAccuracy > _maxAcceptableAccuracy * 2 || 
+          (newLat == null || newLng == null)) {
+        if (!_gpsSignalLost) {
+          setState(() {
+            _gpsSignalLost = true;
+          });
+        }
+      } else {
+        if (_gpsSignalLost) {
+          setState(() {
+            _gpsSignalLost = false;
+            _lastGoodGpsTime = now;
+          });
+        }
+      }
+
+      // Switch to step-based tracking if GPS is unreliable for too long
+      if (_gpsSignalLost && 
+          _lastGoodGpsTime != null && 
+          now.difference(_lastGoodGpsTime!).inSeconds > 30) {
+        if (_usingGps) {
+          setState(() {
+            _usingGps = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Switching to step-based tracking due to poor GPS signal")),
+          );
+        }
+        return;
+      }
+
+      if (newLat == null || newLng == null || _lastAccuracy > _maxAcceptableAccuracy) {
+        return;
+      }
 
       final newPosition = LatLng(newLat, newLng);
-      final movedEnough =
-          _currentPosition == null ||
-          Distance().as(LengthUnit.Meter, _currentPosition!, newPosition) > 0.1;
 
-      if (movedEnough) {
-        print("📡 Lokasi berubah: $newPosition");
+      // If we got a good GPS signal, switch back to GPS tracking
+      if (!_usingGps && _lastAccuracy <= _maxAcceptableAccuracy) {
         setState(() {
-          _currentPosition = newPosition;
-          _mapController.move(newPosition, _mapController.camera.zoom);
-          if (_isRunning) {
-            if (_routePoints.isNotEmpty) {
-              final lastPoint = _routePoints.last;
-              final distance = Distance().as(
-                LengthUnit.Kilometer,
-                lastPoint,
-                newPosition,
-              );
-              _totalDistance += distance;
-            }
-            _routePoints.add(newPosition);
-          }
+          _usingGps = true;
+          _lastGoodGpsTime = now;
         });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("GPS signal restored, switching back to GPS tracking")),
+        );
       }
-    });
-  }
 
-  void _startSimulation() {
-    if (_currentPosition == null) return;
+      final movedEnough = _currentPosition == null ||
+          Distance().as(LengthUnit.Meter, _currentPosition!, newPosition) >= _minDistanceForRouteUpdate;
 
-    const int stepsPerSecond = 3;
-    const int tickSeconds = 2;
-    final int stepsPerTick = stepsPerSecond * tickSeconds; // 6 langkah per tick
-    final double stepLengthMeters =
-        _getStepLength(); // kalibrasi panjang langkah
+      final timeElapsedEnough = DateTime.now().difference(_lastPointTime).inSeconds >= _minLocationUpdateIntervalSeconds;
 
-    _simulationTimer = Timer.periodic(Duration(seconds: tickSeconds), (_) {
-      if (!_isRunning) return;
-
-      _stopwatch.elapsed; // just to keep it running
+      final shouldAddPoint = _isRunning &&
+          _usingGps &&
+          movedEnough &&
+          timeElapsedEnough &&
+          (!_isStationary || (currentSpeed > _minSpeedThresholdMps));
 
       setState(() {
-        steps += stepsPerTick;
-
-        double distanceKm = (stepsPerTick * stepLengthMeters) / 1000;
-
-        double deltaLat = distanceKm / 111.32;
-        double deltaLng =
-            distanceKm /
-            (111.32 * cos(_currentPosition!.latitude * (pi / 180)));
-
-        _currentPosition = LatLng(
-          _currentPosition!.latitude + deltaLat,
-          _currentPosition!.longitude + deltaLng,
-        );
-
-        _mapController.move(_currentPosition!, _mapController.camera.zoom);
-
-        if (_routePoints.isNotEmpty) {
-          final lastPoint = _routePoints.last;
-          final distance = Distance().as(
-            LengthUnit.Kilometer,
-            lastPoint,
-            _currentPosition!,
-          );
-          _totalDistance += distance;
+        if (shouldAddPoint) {
+          if (_routePoints.isNotEmpty) {
+            final lastPoint = _routePoints.last;
+            final distance = Distance().as(LengthUnit.Meter, lastPoint, newPosition);
+            if (distance > _minDistanceForRouteUpdate) {
+              _totalDistance += distance;
+            }
+          }
+          _routePoints.add(newPosition);
+          _updateMetrics();
+          _lastPointTime = DateTime.now();
         }
-
-        _routePoints.add(_currentPosition!);
-
-        // Perhitungan pace
-        if (_stopwatch.elapsed.inSeconds > 0 && _totalDistance > 0) {
-          final paceInSecondsPerKm =
-              _stopwatch.elapsed.inSeconds / _totalDistance;
-          avgPace = paceInSecondsPerKm / 60;
-        } else {
-          avgPace = 0;
-        }
-
-        // Perhitungan kalori
-        final durationInHours = _stopwatch.elapsed.inSeconds / 3600;
-        final met = _metRates[_selectedActivity] ?? 0.0;
-        calories = (met * _userWeightKg * durationInHours).round();
-
-        // Print untuk debugging
-        print("Steps: $steps");
-        print("Distance: ${_totalDistance.toStringAsFixed(3)} km");
-        print("Avg Pace: ${avgPace.toStringAsFixed(2)} min/km");
-        print("Calories: $calories");
+        _currentPosition = newPosition;
+        _mapController.move(newPosition, _mapController.camera.zoom);
       });
     });
   }
 
-  double _getStepLength() {
-    switch (_selectedActivity) {
-      case ActivityType.lari:
-        return 1.2; // meter per langkah untuk lari
-      case ActivityType.sepeda:
-        return 3.0; // meter per langkah untuk sepeda
-      case ActivityType.jalan:
-        return 0.7; // meter per langkah untuk jalan
+  void _updateMetrics() {
+    final durationInSeconds = _stopwatch.elapsed.inSeconds;
+    final durationInHours = durationInSeconds / 3600;
+
+    if (_totalDistance > 0 && durationInHours > 0) {
+      final met = _metRates[_selectedActivity] ?? 0.0;
+      calories = (met * _userWeightKg * durationInHours).round();
+    } else {
+      calories = 0;
+    }
+
+    if (durationInSeconds > 0 && _totalDistance > 0) {
+      final paceInSecondsPerKm = durationInSeconds / (_totalDistance / 1000);
+      avgPace = paceInSecondsPerKm / 60;
+    } else {
+      avgPace = 0;
     }
   }
 
-  void _stopSimulation() {
-    _simulationTimer?.cancel();
-  }
-
   void _startRun() {
+    if (_currentPosition == null && !_gpsSignalLost) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Waiting for GPS signal...")),
+      );
+      return;
+    }
+
     setState(() {
       _isRunning = true;
       _stopwatch.reset();
       _stopwatch.start();
       _routePoints.clear();
       _totalDistance = 0.0;
+      _stepBasedDistance = 0.0;
       avgPace = 0;
       calories = 0;
       steps = 0;
+      _lastStepCount = 0;
       _startStepsInitialized = false;
       _finishPosition = null;
+      _elapsed = Duration.zero;
+      _lastPointTime = DateTime.now();
+      _isStationary = true;
+      _accelerometerReadings.clear();
     });
 
     if (_currentPosition != null) {
@@ -339,82 +552,60 @@ class _RunningPageState extends State<RunningPage> {
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || !_isRunning) return;
-
       setState(() {
-        final durationInSeconds = _stopwatch.elapsed.inSeconds;
-        final durationInHours = durationInSeconds / 3600;
-
-        // Hitung jarak alternatif dari langkah jika GPS kurang akurat
-        final double stepLength = _getStepLength();
-        final double stepDistanceKm = (steps * stepLength) / 1000;
-
-        // Gunakan jarak GPS jika tersedia, atau jarak dari langkah
-        final double effectiveDistance = max(_totalDistance, stepDistanceKm);
-
-        // Perhitungan pace
-        if (durationInSeconds > 0 && effectiveDistance > 0) {
-          final paceInSecondsPerKm = durationInSeconds / effectiveDistance;
-          avgPace = paceInSecondsPerKm / 60;
-        } else {
-          avgPace = 0;
-        }
-
-        // Perhitungan kalori
-        final met = _metRates[_selectedActivity] ?? 0.0;
-        calories = (met * _userWeightKg * durationInHours).round();
-
-        print("Duration: ${_formatDuration(_stopwatch.elapsed)}");
-        print("Effective Distance: ${effectiveDistance.toStringAsFixed(3)} km");
-        print("Steps: $steps");
-        print("Avg Pace: ${avgPace.toStringAsFixed(2)} min/km");
-        print("Calories: $calories");
+        _updateMetrics();
       });
     });
 
-    if (_isSimulating) {
-      _startSimulation();
-    }
-
-    // Inisialisasi langkah awal dengan error handling
-    _stepCountStream.first
-        .then((initial) {
-          if (mounted && _isRunning) {
-            setState(() {
-              _startSteps = initial.steps;
-              _startStepsInitialized = true;
-            });
-          }
-        })
-        .catchError((e) {
-          print("Error getting initial steps: $e");
-          // Fallback jika tidak bisa dapat langkah awal
-          setState(() {
-            _startSteps = 0;
-            _startStepsInitialized = true;
-          });
+    _stepCountStream.first.then((initial) {
+      if (mounted && _isRunning) {
+        setState(() {
+          _startSteps = initial.steps;
+          _startStepsInitialized = true;
         });
+      }
+    }).catchError((e) {
+      if (mounted) {
+        setState(() {
+          _startSteps = 0;
+          _startStepsInitialized = true;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Pedometer unavailable or failed: $e")),
+        );
+      }
+    });
   }
 
   void _stopRun() {
     _stopwatch.stop();
     _timer?.cancel();
-    _stopSimulation();
     setState(() {
       _isRunning = false;
       _finishPosition = _currentPosition;
       _elapsed = _stopwatch.elapsed;
     });
+    saveActivity();
   }
 
   String _formatDuration(Duration d) =>
       "${d.inMinutes.toString().padLeft(2, '0')}:${(d.inSeconds % 60).toString().padLeft(2, '0')}";
+
+  String _formatPace(double paceInMinutesPerKm) {
+    if (paceInMinutesPerKm <= 0 || !paceInMinutesPerKm.isFinite) return "00:00 min/km";
+    final minutes = paceInMinutesPerKm.floor();
+    final seconds = ((paceInMinutesPerKm - minutes) * 60).round();
+    return "${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')} min/km";
+  }
 
   @override
   void dispose() {
     _timer?.cancel();
     _locationSubscription?.cancel();
     _stepCountSubscription?.cancel();
-    _simulationTimer?.cancel();
+    _accelerometerSubscription?.cancel();
+    _stationaryCheckTimer?.cancel();
+    _titleController.dispose();
     super.dispose();
   }
 
@@ -423,9 +614,9 @@ class _RunningPageState extends State<RunningPage> {
       children: [
         Text(
           value,
-          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
         ),
-        SizedBox(height: 4),
+        const SizedBox(height: 4),
         Text(label),
       ],
     );
@@ -444,14 +635,27 @@ class _RunningPageState extends State<RunningPage> {
                 children: [
                   Text(
                     _currentPosition == null
-                        ? "Mengambil lokasi..."
-                        : "GPS Aktif",
+                        ? "Acquiring location..."
+                        : "GPS ${_usingGps ? 'Active' : 'Inactive'} (Accuracy: ${_lastAccuracy.toStringAsFixed(1)}m)",
                     style: TextStyle(
-                      color:
-                          _currentPosition == null ? Colors.grey : Colors.green,
+                      color: _currentPosition == null 
+                          ? Colors.grey 
+                          : (_lastAccuracy > _maxAcceptableAccuracy 
+                              ? Colors.orange 
+                              : Colors.green),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  if (_gpsSignalLost && _usingGps)
+                    const Text(
+                      "Poor GPS signal - using step estimation",
+                      style: TextStyle(color: Colors.orange),
+                    ),
+                  if (_isRunning && _isStationary && _totalDistance == 0)
+                    const Text(
+                      "Start moving to record route...",
+                      style: TextStyle(color: Colors.red),
+                    ),
                   const SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -465,52 +669,50 @@ class _RunningPageState extends State<RunningPage> {
                       _metric("Calories", "$calories cal"),
                       _metric(
                         "Avg. Pace",
-                        avgPace > 0
-                            ? "${avgPace.toStringAsFixed(2)} min/km"
-                            : "00:00",
+                        _formatPace(avgPace),
                       ),
                       _metric("Steps", "$steps"),
+                      _metric("Distance", "${_totalDistance.toStringAsFixed(1)} m"),
                     ],
                   ),
                 ],
               ),
             ),
             Expanded(
-              child:
-                  _currentPosition == null
-                      ? Center(child: CircularProgressIndicator())
-                      : FlutterMap(
-                        mapController: _mapController,
-                        options: MapOptions(
-                          initialCenter: _currentPosition!,
-                          initialZoom: 16,
+              child: _currentPosition == null && _usingGps
+                  ? const Center(child: CircularProgressIndicator())
+                  : FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: _currentPosition ?? const LatLng(0, 0),
+                        initialZoom: _initialMapZoom,
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          subdomains: const ['a', 'b', 'c'],
+                          userAgentPackageName: 'com.example.app',
                         ),
-                        children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            subdomains: ['a', 'b', 'c'],
-                            userAgentPackageName: 'com.example.app',
+                        if (_routePoints.isNotEmpty)
+                          PolylineLayer(
+                            polylines: [
+                              Polyline(
+                                points: _routePoints,
+                                color: _usingGps ? Colors.blue : Colors.orange,
+                                strokeWidth: _polylineStrokeWidth,
+                              ),
+                            ],
                           ),
-                          if (_routePoints.isNotEmpty)
-                            PolylineLayer(
-                              polylines: [
-                                Polyline(
-                                  points: _routePoints,
-                                  color: Colors.blue,
-                                  strokeWidth: 4.0,
-                                ),
-                              ],
-                            ),
+                        if (_currentPosition != null)
                           MarkerLayer(
                             markers: [
                               Marker(
                                 point: _currentPosition!,
                                 width: 60,
                                 height: 60,
-                                child: const Icon(
+                                child: Icon(
                                   Icons.location_pin,
-                                  color: Colors.red,
+                                  color: _usingGps ? Colors.red : Colors.orange,
                                   size: 40,
                                 ),
                               ),
@@ -562,29 +764,10 @@ class _RunningPageState extends State<RunningPage> {
                                 ),
                             ],
                           ),
-                        ],
-                      ),
+                      ],
+                    ),
             ),
             const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: SwitchListTile(
-                title: const Text("Aktifkan Simulasi"),
-                value: _isSimulating,
-                onChanged: (value) {
-                  setState(() {
-                    _isSimulating = value;
-                  });
-                  if (_isRunning) {
-                    if (value) {
-                      _startSimulation();
-                    } else {
-                      _stopSimulation();
-                    }
-                  }
-                },
-              ),
-            ),
             Center(
               child: SizedBox(
                 height: 60,
@@ -602,6 +785,12 @@ class _RunningPageState extends State<RunningPage> {
                         if (!_isRunning) {
                           setState(() {
                             _selectedActivity = type;
+                            // Adjust step length based on activity type
+                            _stepLength = type == ActivityType.run 
+                                ? _averageStepLength + _stepLengthVariation
+                                : type == ActivityType.ride
+                                    ? _averageStepLength * 2.5 // Longer for biking
+                                    : _averageStepLength;
                           });
                         }
                       },
@@ -613,10 +802,7 @@ class _RunningPageState extends State<RunningPage> {
                           color: isSelected ? Colors.black : Colors.white,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color:
-                                isSelected
-                                    ? Colors.black
-                                    : Colors.grey.shade400,
+                            color: isSelected ? Colors.black : Colors.grey.shade400,
                             width: 1.5,
                           ),
                         ),
@@ -649,20 +835,21 @@ class _RunningPageState extends State<RunningPage> {
             Padding(
               padding: const EdgeInsets.all(12.0),
               child: ElevatedButton.icon(
-                onPressed:
-                    _currentPosition == null
-                        ? null
-                        : (_isRunning ? _stopRun : _startRun),
+                onPressed: (_currentPosition == null && _usingGps)
+                    ? null
+                    : (_isRunning ? _stopRun : _startRun),
                 icon: Icon(
                   _isRunning ? Icons.stop : Icons.play_arrow,
                   color: Colors.black,
                 ),
                 label: Text(
-                  _isRunning ? "STOP Running" : "START Running",
-                  style: TextStyle(color: Colors.black),
+                  _isRunning
+                      ? "STOP ${_activityInfo[_selectedActivity]!['label'].toUpperCase()}"
+                      : "START ${_activityInfo[_selectedActivity]!['label'].toUpperCase()}",
+                  style: const TextStyle(color: Colors.black),
                 ),
                 style: ElevatedButton.styleFrom(
-                  minimumSize: Size(double.infinity, 50),
+                  minimumSize: const Size(double.infinity, 50),
                   backgroundColor: _isRunning ? Colors.red : Colors.white,
                 ),
               ),
