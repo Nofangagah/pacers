@@ -211,14 +211,12 @@ class _RunningPageState extends State<RunningPage> {
         caloriesBurned: calories,
         steps: steps,
         avr_pace: avgPace,
-        path: pathData, // Mengirimkan data path yang sudah diproses
+        path: pathData, 
         date: DateTime.now(),
         userId: userId,
-        createdAt: DateTime.now().toIso8601String(),
-        updatedAt: DateTime.now().toIso8601String(),
-        // Hapus 'tracking_mode: _usingGps ? 'gps' : 'step',' dari sini
+       
       );
-      print('CLIENT UI: ActivityModel object to be sent: ${activity.toJson()}');
+     
       final activityFinal = ActivityModel.fromJson(activity.toJson());
       validateActivity(activityFinal);
 

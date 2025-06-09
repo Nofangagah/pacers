@@ -162,11 +162,15 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                 ),
                 child: Row(
                   children: [
+                    IconButton(
+                      icon: const Icon(Icons.arrow_back, color: Colors.white),
+                      onPressed: () => Navigator.pop(context),
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'Activity Details',
                       style: Theme.of(context).textTheme.headlineSmall
-                          ?.copyWith(fontWeight: FontWeight.bold),
+                          ?.copyWith(fontWeight: FontWeight.bold, color: Colors.white),
                     ),
                   ],
                 ),
@@ -180,19 +184,19 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                     children: [
                       Text(
                         getActivityTypeIcon(widget.activity.type),
-                        style: const TextStyle(fontSize: 48),
+                        style: const TextStyle(fontSize: 48, color: Colors.white),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         widget.activity.title,
                         style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                            ?.copyWith(fontWeight: FontWeight.bold, color: Colors.white),
                       ),
                       Text(
                         formatDate(widget.activity.date),
                         style: Theme.of(
                           context,
-                        ).textTheme.bodyMedium?.copyWith(color: Colors.grey),
+                        ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
                       ),
                     ],
                   ),
@@ -286,6 +290,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                       'Activity Route',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
+                        color: Colors.white,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -328,7 +333,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                             context,
                           ).textTheme.bodySmall?.copyWith(
                             fontStyle: FontStyle.italic,
-                            color: Colors.grey,
+                            color: Colors.white70,
                           ),
                         ),
                       ),
@@ -346,6 +351,7 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                       'Activity Details',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
+                        color: Colors.white,
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -399,13 +405,13 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
           children: [
             Row(
               children: [
-                Icon(icon, size: 20, color: Theme.of(context).primaryColor),
+                Icon(icon, size: 20, color: Colors.white),
                 const SizedBox(width: 8),
                 Text(
                   title,
                   style: Theme.of(
                     context,
-                  ).textTheme.bodyMedium?.copyWith(color: Colors.grey[600]),
+                  ).textTheme.bodyMedium?.copyWith(color: Colors.white70),
                 ),
               ],
             ),
@@ -414,7 +420,10 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
               value,
               style: Theme.of(
                 context,
-              ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
           ],
         ),
@@ -433,14 +442,19 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
             child: Text(
               label,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Colors.grey[600],
+                color: Colors.white70,
                 fontWeight: FontWeight.bold,
               ),
             ),
           ),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(value, style: Theme.of(context).textTheme.bodyMedium),
+            child: Text(
+              value, 
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Colors.white,
+              ),
+            ),
           ),
         ],
       ),

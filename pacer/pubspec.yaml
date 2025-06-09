@@ -45,6 +45,7 @@ flutter:
   assets:
     - assets/google_logo.png
     - assets/pacer.jpg
+    - assets/profile.jpeg
 
 flutter_icons:
   android: true

@@ -13,6 +13,8 @@ class MembershipPage extends StatefulWidget {
   State<MembershipPage> createState() => _MembershipPageState();
 }
 
+enum PaymentStatus { none, pending, success, failed }
+
 class _MembershipPageState extends State<MembershipPage> {
   String selectedCurrency = 'IDR';
   Map<String, double> exchangeRates = {};
@@ -24,7 +26,6 @@ class _MembershipPageState extends State<MembershipPage> {
   bool showPaymentSuccess = false;
   bool showPaymentFailed = false;
   bool showPaymentProcessing = false;
-  DateTime? paymentDeadline;
   String selectedPaymentMethod = 'Credit Card';
   String transactionId = '';
   String paymentError = '';
@@ -35,20 +36,16 @@ class _MembershipPageState extends State<MembershipPage> {
   DateTime? membershipExpiry;
   String selectedPlan = 'Premium';
   bool isRenewal = false;
-  bool isPaymentExpired = false;
-
-  // Payment input
-  TextEditingController paymentAmountController = TextEditingController();
-  double enteredAmount = 0;
-  bool isAmountValid = false;
-  double changeAmount = 0;
-  String changeMessage = '';
 
   // Scheduled payment
   DateTime? selectedPaymentDate;
   TimeOfDay? selectedPaymentTime;
   String selectedTimeZone = 'Asia/Jakarta';
   bool isScheduledPayment = false;
+
+  // Payment status
+  PaymentStatus paymentStatus = PaymentStatus.none;
+  List<Map<String, dynamic>> scheduledPayments = [];
 
   final List<String> currencies = ['IDR', 'USD', 'EUR', 'JPY', 'GBP', 'AUD'];
   final List<String> paymentMethods = ['Credit Card', 'Bank Transfer', 'E-Wallet', 'Virtual Account'];
@@ -68,12 +65,7 @@ class _MembershipPageState extends State<MembershipPage> {
     fetchExchangeRates();
     transactionId = 'TRX-${DateTime.now().millisecondsSinceEpoch}';
     _loadMembershipStatus();
-  }
-
-  @override
-  void dispose() {
-    paymentAmountController.dispose();
-    super.dispose();
+    _loadScheduledPayments();
   }
 
   Future<void> _loadMembershipStatus() async {
@@ -160,12 +152,27 @@ class _MembershipPageState extends State<MembershipPage> {
     }
   }
 
+  Future<void> _loadScheduledPayments() async {
+    final prefs = await SharedPreferences.getInstance();
+    final payments = prefs.getStringList('scheduledPayments') ?? [];
+    
+    setState(() {
+      scheduledPayments = payments.map((p) => jsonDecode(p) as Map<String, dynamic>).toList();
+      
+      // Check for any pending payments that should have been processed
+      final now = DateTime.now();
+      for (var payment in scheduledPayments) {
+        final scheduledTime = DateTime.parse(payment['scheduledTime']);
+        if (scheduledTime.isBefore(now)) {
+          if (payment['status'] == 'pending') {
+            _processScheduledPayment(payment);
+          }
+        }
+      }
+    });
+  }
+
   void startPaymentProcess(String plan) {
-    paymentAmountController.clear();
-    enteredAmount = 0;
-    isAmountValid = false;
-    changeAmount = 0;
-    changeMessage = '';
     selectedPaymentDate = null;
     selectedPaymentTime = null;
     isScheduledPayment = false;
@@ -174,11 +181,10 @@ class _MembershipPageState extends State<MembershipPage> {
       showPayment = true;
       showPaymentFailed = false;
       showPaymentSuccess = false;
-      paymentDeadline = DateTime.now().add(const Duration(minutes: 15));
       selectedPlan = plan;
-      isPaymentExpired = false;
       isRenewal = isPremiumMember || isStandardMember;
       transactionId = 'TRX-${DateTime.now().millisecondsSinceEpoch}';
+      paymentStatus = PaymentStatus.none;
     });
   }
 
@@ -215,7 +221,6 @@ class _MembershipPageState extends State<MembershipPage> {
       return 'No schedule set';
     }
     
-    final location = tz.getLocation(selectedTimeZone);
     final scheduledDate = DateTime(
       selectedPaymentDate!.year,
       selectedPaymentDate!.month,
@@ -224,129 +229,150 @@ class _MembershipPageState extends State<MembershipPage> {
       selectedPaymentTime!.minute,
     );
     
-    final scheduledTime = tz.TZDateTime.from(scheduledDate, location);
-    
-    return DateFormat('dd MMM yyyy HH:mm').format(scheduledTime) + 
+    return DateFormat('dd MMM yyyy HH:mm').format(scheduledDate) + 
            ' ($selectedTimeZone)';
   }
 
-  void _validatePaymentAmount(String value) {
-    final amount = double.tryParse(value) ?? 0;
-    final requiredAmount = selectedPlan == 'Premium' ? getConvertedPrice() : getConvertedPrice() * 0.7;
-    
-    setState(() {
-      enteredAmount = amount;
-      isAmountValid = amount >= requiredAmount;
-      
-      if (amount > requiredAmount) {
-        changeAmount = amount - requiredAmount;
-        changeMessage = 'Change: ${formatCurrency(changeAmount, selectedCurrency)}';
-        
-        if (selectedCurrency != 'IDR') {
-          changeMessage += ' (≈ ${formatCurrency(changeAmount / (exchangeRates[selectedCurrency] ?? 1), 'IDR')} IDR)';
-        }
-      } else {
-        changeAmount = 0;
-        changeMessage = '';
-      }
-    });
-  }
-
-  void simulatePayment() {
-    if (isScheduledPayment && selectedPaymentDate != null && selectedPaymentTime != null) {
-      final now = DateTime.now();
-      final scheduledDate = DateTime(
-        selectedPaymentDate!.year,
-        selectedPaymentDate!.month,
-        selectedPaymentDate!.day,
-        selectedPaymentTime!.hour,
-        selectedPaymentTime!.minute,
-      );
-      
-      if (scheduledDate.isBefore(now)) {
-        setState(() {
-          showPaymentFailed = true;
-          paymentError = 'Scheduled time must be in the future';
-        });
-        return;
-      }
-      
-      final duration = scheduledDate.difference(now);
-      final formattedAmount = formatCurrency(enteredAmount, selectedCurrency);
-      final formattedChange = changeAmount > 0 
-          ? formatCurrency(changeAmount, selectedCurrency)
-          : null;
-      
+  void _schedulePayment() {
+    if (selectedPaymentDate == null || selectedPaymentTime == null) {
       setState(() {
-        showPaymentProcessing = true;
-        showPayment = false;
-        paymentError = 'Payment scheduled for ${_formatScheduledPayment()}\nAmount: $formattedAmount';
-        if (formattedChange != null) {
-          paymentError += '\nChange to return: $formattedChange';
-        }
-      });
-      
-      Future.delayed(duration, () {
-        if (mounted) {
-          final willPaymentFail = (DateTime.now().millisecondsSinceEpoch % 5 == 0);
-          if (willPaymentFail) {
-            _handlePaymentFailure("Scheduled payment failed. Please try again.");
-          } else {
-            _handlePaymentSuccess();
-          }
-        }
+        showPaymentFailed = true;
+        paymentError = 'Please select both date and time for payment';
       });
       return;
     }
+
+    final now = DateTime.now();
+    final scheduledDateTime = DateTime(
+      selectedPaymentDate!.year,
+      selectedPaymentDate!.month,
+      selectedPaymentDate!.day,
+      selectedPaymentTime!.hour,
+      selectedPaymentTime!.minute,
+    );
+
+    if (scheduledDateTime.isBefore(now)) {
+      setState(() {
+        showPaymentFailed = true;
+        paymentError = 'Scheduled time must be in the future';
+      });
+      return;
+    }
+
+    final amount = selectedPlan == 'Premium' ? getConvertedPrice() : getConvertedPrice() * 0.7;
     
-    // Immediate payment
-    final formattedAmount = formatCurrency(enteredAmount, selectedCurrency);
-    final formattedChange = changeAmount > 0 
-        ? formatCurrency(changeAmount, selectedCurrency)
-        : null;
-    
+    final newPayment = {
+      'id': 'TRX-${DateTime.now().millisecondsSinceEpoch}',
+      'amount': amount,
+      'currency': selectedCurrency,
+      'plan': selectedPlan,
+      'scheduledTime': scheduledDateTime.toIso8601String(),
+      'status': 'pending',
+      'timeZone': selectedTimeZone,
+      'paymentMethod': selectedPaymentMethod,
+    };
+
     setState(() {
-      showPaymentProcessing = true;
+      scheduledPayments.add(newPayment);
+      paymentStatus = PaymentStatus.pending;
       showPayment = false;
-      showPaymentFailed = false;
-      paymentError = 'Processing payment of $formattedAmount...';
-      if (formattedChange != null) {
-        paymentError += '\nWill return $formattedChange as change';
+      transactionId = newPayment['id'] as String;
+    });
+
+    _saveScheduledPayment(newPayment);
+
+    final duration = scheduledDateTime.difference(now);
+    Future.delayed(duration, () {
+      if (mounted) {
+        _processScheduledPayment(newPayment);
       }
     });
-    
+  }
+
+  Future<void> _saveScheduledPayment(Map<String, dynamic> payment) async {
+    final prefs = await SharedPreferences.getInstance();
+    final payments = prefs.getStringList('scheduledPayments') ?? [];
+    payments.add(jsonEncode(payment));
+    await prefs.setStringList('scheduledPayments', payments);
+  }
+
+  void _processScheduledPayment(Map<String, dynamic> payment) {
     final willPaymentFail = (DateTime.now().millisecondsSinceEpoch % 5 == 0);
     
-    Future.delayed(const Duration(seconds: 3), () {
-      if (willPaymentFail) {
-        _handlePaymentFailure("Payment of $formattedAmount declined by bank. Please try another payment method.");
+    if (willPaymentFail) {
+      _handleScheduledPaymentFailure(payment);
+    } else {
+      _handleScheduledPaymentSuccess(payment);
+    }
+  }
+
+  void _handleScheduledPaymentSuccess(Map<String, dynamic> payment) {
+    setState(() {
+      paymentStatus = PaymentStatus.success;
+      showPaymentSuccess = true;
+      
+      final index = scheduledPayments.indexWhere((p) => p['id'] == payment['id']);
+      if (index != -1) {
+        scheduledPayments[index]['status'] = 'success';
+        _updateScheduledPaymentStatus(payment['id'], 'success');
+      }
+      
+      if (payment['plan'] == 'Premium') {
+        _saveMembershipStatus(true, false);
       } else {
-        _handlePaymentSuccess();
+        _saveMembershipStatus(false, true);
       }
     });
   }
 
-  void _handlePaymentSuccess() {
-    if (selectedPlan == 'Premium') {
-      _saveMembershipStatus(true, false);
-    } else {
-      _saveMembershipStatus(false, true);
-    }
-    
+  void _handleScheduledPaymentFailure(Map<String, dynamic> payment) {
     setState(() {
-      showPaymentProcessing = false;
-      showPaymentSuccess = true;
-      showPaymentFailed = false;
+      paymentStatus = PaymentStatus.failed;
+      showPaymentFailed = true;
+      paymentError = 'Scheduled payment failed. Payment time has passed without successful transaction.';
+      
+      final index = scheduledPayments.indexWhere((p) => p['id'] == payment['id']);
+      if (index != -1) {
+        scheduledPayments[index]['status'] = 'failed';
+        _updateScheduledPaymentStatus(payment['id'], 'failed');
+      }
     });
   }
 
-  void _handlePaymentFailure(String error) {
+  Future<void> _updateScheduledPaymentStatus(String id, String status) async {
+    final prefs = await SharedPreferences.getInstance();
+    final payments = prefs.getStringList('scheduledPayments') ?? [];
+    
+    final updatedPayments = payments.map((p) {
+      final payment = jsonDecode(p) as Map<String, dynamic>;
+      if (payment['id'] == id) {
+        payment['status'] = status;
+        return jsonEncode(payment);
+      }
+      return p;
+    }).toList();
+    
+    await prefs.setStringList('scheduledPayments', updatedPayments);
+  }
+
+  void _cancelScheduledPayment(String id) async {
     setState(() {
-      showPaymentProcessing = false;
-      showPaymentFailed = true;
-      paymentError = error;
-      paymentDeadline = null;
+      scheduledPayments.removeWhere((p) => p['id'] == id);
+      paymentStatus = PaymentStatus.none;
     });
+    
+    final prefs = await SharedPreferences.getInstance();
+    final payments = prefs.getStringList('scheduledPayments') ?? [];
+    final updatedPayments = payments.where((p) {
+      final payment = jsonDecode(p) as Map<String, dynamic>;
+      return payment['id'] != id;
+    }).toList();
+    
+    await prefs.setStringList('scheduledPayments', updatedPayments);
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Scheduled payment cancelled')),
+    );
   }
 
   void resetPayment() {
@@ -355,21 +381,10 @@ class _MembershipPageState extends State<MembershipPage> {
       showPaymentSuccess = false;
       showPaymentFailed = false;
       showPaymentProcessing = false;
-      isPaymentExpired = false;
-      changeAmount = 0;
-      changeMessage = '';
       selectedPaymentDate = null;
       selectedPaymentTime = null;
       isScheduledPayment = false;
-    });
-  }
-
-  void _retryPayment() {
-    setState(() {
-      showPaymentFailed = false;
-      showPayment = true;
-      paymentDeadline = DateTime.now().add(const Duration(minutes: 15));
-      isPaymentExpired = false;
+      paymentStatus = PaymentStatus.none;
     });
   }
 
@@ -409,6 +424,90 @@ class _MembershipPageState extends State<MembershipPage> {
     }
   }
 
+  Widget _buildPendingPayment() {
+    final pendingPayment = scheduledPayments.firstWhere(
+      (p) => p['status'] == 'pending',
+      orElse: () => {},
+    );
+    
+    if (pendingPayment.isEmpty) return const SizedBox();
+    
+    final scheduledTime = DateTime.parse(pendingPayment['scheduledTime']);
+    final formattedTime = DateFormat('dd MMM yyyy HH:mm').format(scheduledTime);
+    final formattedAmount = formatCurrency(pendingPayment['amount'], pendingPayment['currency']);
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.blueGrey[900],
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Pending Payment',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.amber,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Plan: ${pendingPayment['plan']} Membership',
+            style: const TextStyle(fontSize: 16, color: Colors.white),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Amount: $formattedAmount',
+            style: const TextStyle(fontSize: 16, color: Colors.white),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Payment Method: ${pendingPayment['paymentMethod']}',
+            style: const TextStyle(fontSize: 16, color: Colors.white),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Scheduled for: $formattedTime (${pendingPayment['timeZone']})',
+            style: const TextStyle(fontSize: 16, color: Colors.white),
+          ),
+          const SizedBox(height: 8),
+          StreamBuilder(
+            stream: Stream.periodic(const Duration(seconds: 1)),
+            builder: (context, snapshot) {
+              final now = DateTime.now();
+              final remaining = scheduledTime.difference(now);
+              
+              return Text(
+                remaining.isNegative 
+                    ? 'Payment time has arrived'
+                    : 'Time remaining: ${_formatDuration(remaining)}',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: remaining.isNegative ? Colors.amber : Colors.white,
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () {
+              _cancelScheduledPayment(pendingPayment['id']);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            child: const Text('Cancel Scheduled Payment'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildCurrencySelector() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -439,9 +538,6 @@ class _MembershipPageState extends State<MembershipPage> {
               if (value != null) {
                 setState(() {
                   selectedCurrency = value;
-                  if (showPayment) {
-                    _validatePaymentAmount(paymentAmountController.text);
-                  }
                 });
               }
             },
@@ -698,7 +794,7 @@ class _MembershipPageState extends State<MembershipPage> {
     return Column(
       children: [
         const Text(
-          'Complete Your Payment',
+          'Schedule Your Payment',
           style: TextStyle(
             fontSize: 24,
             fontWeight: FontWeight.bold,
@@ -715,7 +811,7 @@ class _MembershipPageState extends State<MembershipPage> {
         ),
         const SizedBox(height: 8),
         Text(
-          'Required Amount: $requiredAmount',
+          'Amount: $requiredAmount',
           style: const TextStyle(
             fontSize: 20,
             color: Colors.amber,
@@ -733,73 +829,15 @@ class _MembershipPageState extends State<MembershipPage> {
         ],
         const SizedBox(height: 24),
         
-        // Payment Amount Input
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32.0),
-          child: TextField(
-            controller: paymentAmountController,
-            keyboardType: TextInputType.number,
-            decoration: InputDecoration(
-              labelText: 'Enter Payment Amount ($selectedCurrency)',
-              border: const OutlineInputBorder(),
-              suffixIcon: IconButton(
-                icon: const Icon(Icons.clear),
-                onPressed: () {
-                  paymentAmountController.clear();
-                  _validatePaymentAmount('');
-                },
-              ),
-            ),
-            onChanged: _validatePaymentAmount,
-          ),
-        ),
-        const SizedBox(height: 16),
-        
-        // Payment status and change information
-        Column(
-          children: [
-            Text(
-              isAmountValid 
-                  ? 'Payment amount accepted'
-                  : 'Please enter at least $requiredAmount',
-              style: TextStyle(
-                color: isAmountValid ? Colors.green : Colors.red,
-              ),
-            ),
-            if (changeAmount > 0) ...[
-              const SizedBox(height: 8),
-              Text(
-                changeMessage,
-                style: const TextStyle(
-                  fontSize: 16,
-                  color: Colors.green,
-                ),
-              ),
-            ],
-          ],
-        ),
-        
-        if (enteredAmount > 0 && selectedCurrency != 'IDR') ...[
-          const SizedBox(height: 8),
-          Text(
-            'Total in IDR: ${formatCurrency(enteredAmount / (exchangeRates[selectedCurrency] ?? 1), 'IDR')}',
-            style: const TextStyle(
-              fontSize: 14,
-              color: Colors.white70,
-            ),
-          ),
-        ],
-        const SizedBox(height: 24),
-        
         // Payment Schedule Section
         const Text(
-          'Payment Schedule (Optional):',
+          'Select Payment Date and Time:',
           style: TextStyle(
             fontSize: 18,
             color: Colors.white70,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -828,7 +866,7 @@ class _MembershipPageState extends State<MembershipPage> {
             ),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
         DropdownButton<String>(
           value: selectedTimeZone,
           dropdownColor: Colors.grey[900],
@@ -849,7 +887,7 @@ class _MembershipPageState extends State<MembershipPage> {
             }
           },
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 16),
         Text(
           _formatScheduledPayment(),
           style: const TextStyle(
@@ -887,65 +925,6 @@ class _MembershipPageState extends State<MembershipPage> {
             }
           },
         ),
-        const SizedBox(height: 24),
-        
-        const Text(
-          'Payment Deadline:',
-          style: TextStyle(
-            fontSize: 16,
-            color: Colors.white70,
-          ),
-        ),
-        const SizedBox(height: 8),
-        StreamBuilder(
-          stream: Stream.periodic(const Duration(seconds: 1)),
-          builder: (context, snapshot) {
-            if (paymentDeadline == null) {
-              return const Text(
-                'Payment expired!',
-                style: TextStyle(
-                  fontSize: 18,
-                  color: Colors.red,
-                  fontWeight: FontWeight.bold,
-                ),
-              );
-            }
-            
-            final now = DateTime.now();
-            final remaining = paymentDeadline!.difference(now);
-            
-            if (remaining.isNegative) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (!isPaymentExpired) {
-                  setState(() {
-                    isPaymentExpired = true;
-                    showPayment = false;
-                    showPaymentFailed = true;
-                    paymentError = 'Payment time expired. Please try again.';
-                  });
-                }
-              });
-              
-              return const Text(
-                'Payment time expired!',
-                style: TextStyle(
-                  fontSize: 18,
-                  color: Colors.red,
-                  fontWeight: FontWeight.bold,
-                ),
-              );
-            }
-            
-            return Text(
-              _formatDuration(remaining),
-              style: const TextStyle(
-                fontSize: 24,
-                color: Colors.amber,
-                fontWeight: FontWeight.bold,
-              ),
-            );
-          },
-        ),
         const SizedBox(height: 32),
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -959,12 +938,16 @@ class _MembershipPageState extends State<MembershipPage> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: isAmountValid ? simulatePayment : null,
+              onPressed: (selectedPaymentDate != null && selectedPaymentTime != null) 
+                  ? _schedulePayment 
+                  : null,
               style: ElevatedButton.styleFrom(
-                backgroundColor: isAmountValid ? Colors.green : Colors.grey,
+                backgroundColor: (selectedPaymentDate != null && selectedPaymentTime != null) 
+                    ? Colors.green 
+                    : Colors.grey,
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
               ),
-              child: const Text('Pay Now'),
+              child: const Text('Schedule Payment'),
             ),
           ],
         ),
@@ -973,10 +956,10 @@ class _MembershipPageState extends State<MembershipPage> {
   }
 
   Widget _buildPaymentProcessing() {
-    final formattedAmount = formatCurrency(enteredAmount, selectedCurrency);
-    final formattedChange = changeAmount > 0 
-        ? formatCurrency(changeAmount, selectedCurrency)
-        : null;
+    final formattedAmount = formatCurrency(
+      selectedPlan == 'Premium' ? getConvertedPrice() : getConvertedPrice() * 0.7,
+      selectedCurrency
+    );
     
     return Center(
       child: Column(
@@ -985,9 +968,7 @@ class _MembershipPageState extends State<MembershipPage> {
           const CircularProgressIndicator(),
           const SizedBox(height: 24),
           Text(
-            isScheduledPayment 
-                ? 'Scheduling your payment...' 
-                : 'Processing your payment...',
+            'Scheduling your payment...',
             style: const TextStyle(
               fontSize: 20,
               color: Colors.white,
@@ -1001,37 +982,25 @@ class _MembershipPageState extends State<MembershipPage> {
               color: Colors.amber,
             ),
           ),
-          if (formattedChange != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Change to return: $formattedChange',
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.green,
-              ),
-            ),
-          ],
-          if (isScheduledPayment) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Scheduled for: ${_formatScheduledPayment()}',
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.white70,
-              ),
-            ),
-          ],
           const SizedBox(height: 8),
           Text(
-            'Transaction ID: $transactionId',
+            'Scheduled for: ${_formatScheduledPayment()}',
             style: const TextStyle(
-              fontSize: 14,
+              fontSize: 16,
               color: Colors.white70,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            paymentError,
+            'Payment Method: $selectedPaymentMethod',
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.white70,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Transaction ID: $transactionId',
             style: const TextStyle(
               fontSize: 14,
               color: Colors.white70,
@@ -1043,10 +1012,10 @@ class _MembershipPageState extends State<MembershipPage> {
   }
 
   Widget _buildPaymentSuccess() {
-    final formattedAmount = formatCurrency(enteredAmount, selectedCurrency);
-    final formattedChange = changeAmount > 0 
-        ? formatCurrency(changeAmount, selectedCurrency)
-        : null;
+    final formattedAmount = formatCurrency(
+      selectedPlan == 'Premium' ? getConvertedPrice() : getConvertedPrice() * 0.7,
+      selectedCurrency
+    );
     
     return Center(
       child: Column(
@@ -1058,11 +1027,9 @@ class _MembershipPageState extends State<MembershipPage> {
             size: 80,
           ),
           const SizedBox(height: 24),
-          Text(
-            isScheduledPayment 
-                ? 'Payment Scheduled Successfully!'
-                : 'Payment Successful!',
-            style: const TextStyle(
+          const Text(
+            'Payment Scheduled Successfully!',
+            style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
               color: Colors.white,
@@ -1076,32 +1043,20 @@ class _MembershipPageState extends State<MembershipPage> {
               color: Colors.amber,
             ),
           ),
-          if (formattedChange != null) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Change Returned: $formattedChange',
-              style: const TextStyle(
-                fontSize: 18,
-                color: Colors.green,
-              ),
-            ),
-          ],
-          if (isScheduledPayment) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Scheduled for: ${_formatScheduledPayment()}',
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.white70,
-              ),
-            ),
-          ],
           const SizedBox(height: 8),
           Text(
-            'You are now a $selectedPlan Member',
+            'Scheduled for: ${_formatScheduledPayment()}',
             style: const TextStyle(
-              fontSize: 18,
-              color: Colors.amber,
+              fontSize: 16,
+              color: Colors.white70,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Payment Method: $selectedPaymentMethod',
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.white70,
             ),
           ),
           const SizedBox(height: 16),
@@ -1112,15 +1067,6 @@ class _MembershipPageState extends State<MembershipPage> {
               color: Colors.white70,
             ),
           ),
-          const SizedBox(height: 8),
-          if (membershipExpiry != null)
-            Text(
-              'Expires on: ${DateFormat('dd MMM yyyy').format(membershipExpiry!)}',
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.white70,
-              ),
-            ),
           const SizedBox(height: 32),
           ElevatedButton(
             onPressed: resetPayment,
@@ -1136,7 +1082,10 @@ class _MembershipPageState extends State<MembershipPage> {
   }
 
   Widget _buildPaymentFailed() {
-    final formattedAmount = formatCurrency(enteredAmount, selectedCurrency);
+    final formattedAmount = formatCurrency(
+      selectedPlan == 'Premium' ? getConvertedPrice() : getConvertedPrice() * 0.7,
+      selectedCurrency
+    );
     
     return Center(
       child: Column(
@@ -1148,11 +1097,9 @@ class _MembershipPageState extends State<MembershipPage> {
             size: 80,
           ),
           const SizedBox(height: 24),
-          Text(
-            isScheduledPayment 
-                ? 'Payment Scheduling Failed'
-                : 'Payment Failed',
-            style: const TextStyle(
+          const Text(
+            'Payment Scheduling Failed',
+            style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.bold,
               color: Colors.white,
@@ -1166,16 +1113,14 @@ class _MembershipPageState extends State<MembershipPage> {
               color: Colors.white70,
             ),
           ),
-          if (isScheduledPayment) ...[
-            const SizedBox(height: 8),
-            Text(
-              'Scheduled for: ${_formatScheduledPayment()}',
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.white70,
-              ),
+          const SizedBox(height: 8),
+          Text(
+            'Scheduled for: ${_formatScheduledPayment()}',
+            style: const TextStyle(
+              fontSize: 16,
+              color: Colors.white70,
             ),
-          ],
+          ),
           const SizedBox(height: 8),
           Text(
             paymentError,
@@ -1207,12 +1152,17 @@ class _MembershipPageState extends State<MembershipPage> {
               ),
               const SizedBox(width: 16),
               ElevatedButton(
-                onPressed: _retryPayment,
+                onPressed: () {
+                  setState(() {
+                    showPaymentFailed = false;
+                    showPayment = true;
+                  });
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.amber,
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                 ),
-                child: const Text('Retry Payment'),
+                child: const Text('Try Again'),
               ),
             ],
           ),
@@ -1285,6 +1235,7 @@ class _MembershipPageState extends State<MembershipPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (paymentStatus == PaymentStatus.pending) _buildPendingPayment(),
                   if (!showPayment && !showPaymentSuccess && !showPaymentProcessing && !showPaymentFailed) ...[
                     _buildMembershipStatus(),
                     _buildCurrencySelector(),
@@ -1302,7 +1253,7 @@ class _MembershipPageState extends State<MembershipPage> {
                         currency: selectedCurrency,
                         isFeatured: true,
                       ),
-                                            const SizedBox(height: 16),
+                      const SizedBox(height: 16),
                       _buildMembershipCard(
                         title: 'Standard',
                         benefits: [

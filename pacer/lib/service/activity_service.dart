@@ -37,8 +37,7 @@ static Future<List<ActivityModel>> saveActivity(ActivityModel activity) async {
         }).toList(),
          'date': activity.date.toIso8601String(),
         'userId': activity.userId,
-        'createdAt': activity.createdAt,
-        'updatedAt': activity.updatedAt,
+       
         // Hapus 'tracking_mode' dari requestBody
       };
 
@@ -52,9 +51,8 @@ static Future<List<ActivityModel>> saveActivity(ActivityModel activity) async {
         headers: {'Content-Type': 'application/json'},
       );
 
-      // Logging respon lengkap dari server
-      print('CLIENT: Server Response Status: ${response.statusCode}');
-      print('CLIENT: Server Response Body: ${response.body}');
+   
+     
 
       if (response.statusCode == 201 || response.statusCode == 200) { // Menambahkan 200 sebagai kemungkinan sukses
         final responseData = jsonDecode(response.body); // Coba parse JSON
@@ -98,4 +96,59 @@ static Future<List<ActivityModel>> saveActivity(ActivityModel activity) async {
     }
   }
 
+
+  static Future<List<ActivityModel>> deleteActivity(int activityId) async {
+  try {
+    final url = Uri.parse('${Constant.baseUrl}/activity/$activityId');
+    final response = await authorizedRequest(url, method: 'DELETE');
+
+    print('Delete Activity Response: ${response.statusCode} - ${response.body}');
+
+    if (response.statusCode == 200) {
+      try {
+        final responseData = jsonDecode(response.body);
+        
+        // If the response is just a success message (Map)
+        if (responseData is Map<String, dynamic>) {
+          if (responseData.containsKey('success') || responseData.containsKey('message')) {
+            // Return empty list to indicate success but no data
+            return [];
+          }
+          // If the map contains activity data
+          else if (responseData.containsKey('id')) {
+            return [ActivityModel.fromJson(responseData)];
+          }
+        }
+        
+        // If the response is a list of activities
+        else if (responseData is List) {
+          return responseData.map((item) => ActivityModel.fromJson(item)).toList();
+        }
+        
+        // If we get here, the format is unexpected
+        throw Exception('Unexpected response format from server');
+      } catch (e) {
+        print('Error parsing response: $e');
+        // If parsing fails but status is 200, consider it a success with no data
+        return [];
+      }
+    } 
+    else if (response.statusCode == 204) {
+      // No content response - successful deletion
+      return [];
+    }
+    else if (response.statusCode == 404) {
+      throw Exception('Activity not found');
+    } 
+    else if (response.statusCode == 401) {
+      throw Exception('Unauthorized - Please login again');
+    } 
+    else {
+      throw Exception('Failed to delete activity: ${response.statusCode} - ${response.body}');
+    }
+  } catch (e) {
+    print('Error deleting activity: $e');
+    throw Exception('Failed to delete activity: $e');
+  }
+}
 }

@@ -11,7 +11,6 @@ router.get('/user/:id', authMiddleware, getUserActivities);
 router.post('/saveActivity', authMiddleware, saveActivity);
 // GET single activity by ID
 router.get('/:id', authMiddleware, getActivityById);
-
 router.delete('/:id', authMiddleware, deleteActivity);
 
 
