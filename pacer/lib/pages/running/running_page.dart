@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:location/location.dart';
+import 'package:pacer/service/notification_service.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart' as perm_handler;
@@ -48,6 +49,7 @@ class _RunningPageState extends State<RunningPage> {
 
   late final MapController _mapController;
   bool _isRunning = false;
+  bool _isPaused = false;
   final Stopwatch _stopwatch = Stopwatch();
   Timer? _timer;
   StreamSubscription<LocationData>? _locationSubscription;
@@ -107,6 +109,7 @@ class _RunningPageState extends State<RunningPage> {
     _initializePedometer();
     _initializeAccelerometer();
     _loadUserWeight();
+     NotificationService.initLocalNotification();
   }
 
   Future<void> _loadUserWeight() async {
@@ -127,47 +130,46 @@ class _RunningPageState extends State<RunningPage> {
 
     final shouldSave = await showDialog<bool>(
       context: context,
-      builder:
-          (context) => AlertDialog(
-            title: const Text("Save Activity"),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(
-                  controller: _titleController,
-                  decoration: const InputDecoration(
-                    labelText: "Activity Title",
-                    hintText: "Example: Morning Run",
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text("Total Distance: ${_totalDistance.toStringAsFixed(0)} m"),
-                Text("Duration: ${_formatDuration(_stopwatch.elapsed)}"),
-                Text("Steps: $steps"),
-                Text("Calories: $calories cal"),
-                Text("Tracking Mode: ${_usingGps ? 'GPS' : 'Step-based'}"),
-              ],
+      builder: (context) => AlertDialog(
+        title: const Text("Save Activity"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _titleController,
+              decoration: const InputDecoration(
+                labelText: "Activity Title",
+                hintText: "Example: Morning Run",
+                border: OutlineInputBorder(),
+              ),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text("Cancel"),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  if (_titleController.text.isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text("Title cannot be empty!")),
-                    );
-                    return;
-                  }
-                  Navigator.pop(context, true);
-                },
-                child: const Text("Save"),
-              ),
-            ],
+            const SizedBox(height: 16),
+            Text("Total Distance: ${_totalDistance.toStringAsFixed(0)} m"),
+            Text("Duration: ${_formatDuration(_stopwatch.elapsed)}"),
+            Text("Steps: $steps"),
+            Text("Calories: $calories cal"),
+            Text("Tracking Mode: ${_usingGps ? 'GPS' : 'Step-based'}"),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
           ),
+          ElevatedButton(
+            onPressed: () {
+              if (_titleController.text.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Title cannot be empty!")),
+                );
+                return;
+              }
+              Navigator.pop(context, true);
+            },
+            child: const Text("Save"),
+          ),
+        ],
+      ),
     );
 
     if (shouldSave != true) {
@@ -194,36 +196,37 @@ class _RunningPageState extends State<RunningPage> {
       List<Map<String, double>> pathData = [];
       if (_usingGps && _routePoints.isNotEmpty) {
         pathData =
-            _routePoints
-                .map((p) => {'lat': p.latitude, 'lng': p.longitude})
-                .toList();
+            _routePoints.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList();
       } else if (!_usingGps) {
         pathData = [];
       }
       final activity = ActivityModel(
-        title:
-            _titleController.text.isNotEmpty
-                ? _titleController.text
-                : generateDefaultTitle(activityType, _totalDistance),
+        title: _titleController.text.isNotEmpty
+            ? _titleController.text
+            : generateDefaultTitle(activityType, _totalDistance),
         type: activityType,
         distance: _totalDistance,
         duration: _stopwatch.elapsed.inSeconds,
         caloriesBurned: calories,
         steps: steps,
         avr_pace: avgPace,
-        path: pathData, 
+        path: pathData,
         date: DateTime.now(),
         userId: userId,
-       
       );
-     
+
       final activityFinal = ActivityModel.fromJson(activity.toJson());
       validateActivity(activityFinal);
+      await ActivityService.saveActivity(activityFinal);
 
-      await ActivityService.saveActivity(activity);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Activity saved successfully!")),
-      );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Activity saved successfully!")),
+    );
+    
+    await NotificationService.showNotification(
+      title: 'Activity Saved',
+      body: '${activity.title} (${(_totalDistance/1000).toStringAsFixed(2)} km) was saved successfully',
+    );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to save: ${e.toString()}")),
@@ -235,8 +238,7 @@ class _RunningPageState extends State<RunningPage> {
 
   void validateActivity(ActivityModel activity) {
     if (activity.title.isEmpty) throw Exception('Title cannot be empty!');
-    if (activity.type.isEmpty)
-      throw Exception('Activity type cannot be empty!');
+    if (activity.type.isEmpty) throw Exception('Activity type cannot be empty!');
   }
 
   String generateDefaultTitle(String activityType, double distance) {
@@ -249,6 +251,7 @@ class _RunningPageState extends State<RunningPage> {
     _stopwatch.reset();
     setState(() {
       _isRunning = false;
+      _isPaused = false;
       _totalDistance = 0.0;
       _stepBasedDistance = 0.0;
       steps = 0;
@@ -270,7 +273,7 @@ class _RunningPageState extends State<RunningPage> {
   void _initializePedometer() {
     _stepCountSubscription = _stepCountStream.listen(
       (event) {
-        if (!_isRunning || !_startStepsInitialized) return;
+        if (!_isRunning || !_startStepsInitialized || _isPaused) return;
 
         final newSteps = event.steps - _startSteps;
         final stepDifference = newSteps - _lastStepCount;
@@ -430,6 +433,8 @@ class _RunningPageState extends State<RunningPage> {
     }
 
     _locationSubscription = _location.onLocationChanged.listen((locationData) {
+      if (_isPaused) return;
+      
       final newLat = locationData.latitude;
       final newLng = locationData.longitude;
       _lastAccuracy = locationData.accuracy ?? 0.0;
@@ -495,17 +500,16 @@ class _RunningPageState extends State<RunningPage> {
         );
       }
 
-      final movedEnough =
-          _currentPosition == null ||
+      final movedEnough = _currentPosition == null ||
           Distance().as(LengthUnit.Meter, _currentPosition!, newPosition) >=
               _minDistanceForRouteUpdate;
 
       final timeElapsedEnough =
           DateTime.now().difference(_lastPointTime).inSeconds >=
-          _minLocationUpdateIntervalSeconds;
+              _minLocationUpdateIntervalSeconds;
 
-      final shouldAddPoint =
-          _isRunning &&
+      final shouldAddPoint = _isRunning &&
+          !_isPaused &&
           _usingGps &&
           movedEnough &&
           timeElapsedEnough &&
@@ -563,6 +567,7 @@ class _RunningPageState extends State<RunningPage> {
 
     setState(() {
       _isRunning = true;
+      _isPaused = false;
       _stopwatch.reset();
       _stopwatch.start();
       _routePoints.clear();
@@ -586,7 +591,7 @@ class _RunningPageState extends State<RunningPage> {
     }
 
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted || !_isRunning) return;
+      if (!mounted || !_isRunning || _isPaused) return;
       setState(() {
         _updateMetrics();
       });
@@ -594,7 +599,7 @@ class _RunningPageState extends State<RunningPage> {
 
     _stepCountStream.first
         .then((initial) {
-          if (mounted && _isRunning) {
+          if (mounted && _isRunning && !_isPaused) {
             setState(() {
               _startSteps = initial.steps;
               _startStepsInitialized = true;
@@ -614,11 +619,26 @@ class _RunningPageState extends State<RunningPage> {
         });
   }
 
+  void _pauseRun() {
+    setState(() {
+      _isPaused = true;
+      _stopwatch.stop();
+    });
+  }
+
+  void _resumeRun() {
+    setState(() {
+      _isPaused = false;
+      _stopwatch.start();
+    });
+  }
+
   void _stopRun() {
     _stopwatch.stop();
     _timer?.cancel();
     setState(() {
       _isRunning = false;
+      _isPaused = false;
       _finishPosition = _currentPosition;
       _elapsed = _stopwatch.elapsed;
     });
@@ -676,12 +696,11 @@ class _RunningPageState extends State<RunningPage> {
                         ? "Acquiring location..."
                         : "GPS ${_usingGps ? 'Active' : 'Inactive'} (Accuracy: ${_lastAccuracy.toStringAsFixed(0)}m)",
                     style: TextStyle(
-                      color:
-                          _currentPosition == null
-                              ? Colors.grey
-                              : (_lastAccuracy > _maxAcceptableAccuracy
-                                  ? Colors.orange
-                                  : Colors.green),
+                      color: _currentPosition == null
+                          ? Colors.grey
+                          : (_lastAccuracy > _maxAcceptableAccuracy
+                              ? Colors.orange
+                              : Colors.green),
                       fontWeight: FontWeight.bold,
                     ),
                   ),
@@ -702,8 +721,7 @@ class _RunningPageState extends State<RunningPage> {
                       _metric(
                         "Duration",
                         _formatDuration(
-                          _isRunning ? _stopwatch.elapsed : _elapsed,
-                        ),
+                            _isRunning ? _stopwatch.elapsed : _elapsed),
                       ),
                       _metric("Calories", "$calories cal"),
                       _metric("Avg. Pace", _formatPace(avgPace)),
@@ -718,97 +736,94 @@ class _RunningPageState extends State<RunningPage> {
               ),
             ),
             Expanded(
-              child:
-                  _currentPosition == null && _usingGps
-                      ? const Center(child: CircularProgressIndicator())
-                      : FlutterMap(
-                        mapController: _mapController,
-                        options: MapOptions(
-                          initialCenter: _currentPosition ?? const LatLng(0, 0),
-                          initialZoom: _initialMapZoom,
-                        ),
-                        children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            subdomains: const ['a', 'b', 'c'],
-                            userAgentPackageName: 'com.example.app',
-                          ),
-                          if (_routePoints.isNotEmpty)
-                            PolylineLayer(
-                              polylines: [
-                                Polyline(
-                                  points: _routePoints,
-                                  color:
-                                      _usingGps ? Colors.blue : Colors.orange,
-                                  strokeWidth: _polylineStrokeWidth,
-                                ),
-                              ],
-                            ),
-                          if (_currentPosition != null)
-                            MarkerLayer(
-                              markers: [
-                                Marker(
-                                  point: _currentPosition!,
-                                  width: 60,
-                                  height: 60,
-                                  child: Icon(
-                                    Icons.location_pin,
-                                    color:
-                                        _usingGps ? Colors.red : Colors.orange,
-                                    size: 40,
-                                  ),
-                                ),
-                                if (_startPosition != null)
-                                  Marker(
-                                    point: _startPosition!,
-                                    width: 80,
-                                    height: 80,
-                                    child: Column(
-                                      children: const [
-                                        Icon(
-                                          Icons.flag,
-                                          color: Colors.green,
-                                          size: 30,
-                                        ),
-                                        Text(
-                                          'Start',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.green,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                if (_finishPosition != null)
-                                  Marker(
-                                    point: _finishPosition!,
-                                    width: 80,
-                                    height: 80,
-                                    child: Column(
-                                      children: const [
-                                        Icon(
-                                          Icons.flag,
-                                          color: Colors.blue,
-                                          size: 30,
-                                        ),
-                                        Text(
-                                          'Finish',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.blue,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                              ],
-                            ),
-                        ],
+              child: _currentPosition == null && _usingGps
+                  ? const Center(child: CircularProgressIndicator())
+                  : FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: _currentPosition ?? const LatLng(0, 0),
+                        initialZoom: _initialMapZoom,
                       ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          subdomains: const ['a', 'b', 'c'],
+                          userAgentPackageName: 'com.example.app',
+                        ),
+                        if (_routePoints.isNotEmpty)
+                          PolylineLayer(
+                            polylines: [
+                              Polyline(
+                                points: _routePoints,
+                                color: _usingGps ? Colors.blue : Colors.orange,
+                                strokeWidth: _polylineStrokeWidth,
+                              ),
+                            ],
+                          ),
+                        if (_currentPosition != null)
+                          MarkerLayer(
+                            markers: [
+                              Marker(
+                                point: _currentPosition!,
+                                width: 60,
+                                height: 60,
+                                child: Icon(
+                                  Icons.location_pin,
+                                  color: _usingGps ? Colors.red : Colors.orange,
+                                  size: 40,
+                                ),
+                              ),
+                              if (_startPosition != null)
+                                Marker(
+                                  point: _startPosition!,
+                                  width: 80,
+                                  height: 80,
+                                  child: Column(
+                                    children: const [
+                                      Icon(
+                                        Icons.flag,
+                                        color: Colors.green,
+                                        size: 30,
+                                      ),
+                                      Text(
+                                        'Start',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.green,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              if (_finishPosition != null)
+                                Marker(
+                                  point: _finishPosition!,
+                                  width: 80,
+                                  height: 80,
+                                  child: Column(
+                                    children: const [
+                                      Icon(
+                                        Icons.flag,
+                                        color: Colors.blue,
+                                        size: 30,
+                                      ),
+                                      Text(
+                                        'Finish',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.blue,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                      ],
+                    ),
             ),
             const SizedBox(height: 12),
             Center(
@@ -828,12 +843,10 @@ class _RunningPageState extends State<RunningPage> {
                         if (!_isRunning) {
                           setState(() {
                             _selectedActivity = type;
-                            _stepLength =
-                                type == ActivityType.run
-                                    ? _averageStepLength + _stepLengthVariation
-                                    : type == ActivityType.ride
-                                    ? _averageStepLength *
-                                        2.5 // Longer for biking
+                            _stepLength = type == ActivityType.run
+                                ? _averageStepLength + _stepLengthVariation
+                                : type == ActivityType.ride
+                                    ? _averageStepLength * 2.5
                                     : _averageStepLength;
                           });
                         }
@@ -846,10 +859,7 @@ class _RunningPageState extends State<RunningPage> {
                           color: isSelected ? Colors.black : Colors.white,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color:
-                                isSelected
-                                    ? Colors.black
-                                    : Colors.grey.shade400,
+                            color: isSelected ? Colors.black : Colors.grey.shade400,
                             width: 1.5,
                           ),
                         ),
@@ -881,25 +891,52 @@ class _RunningPageState extends State<RunningPage> {
             const SizedBox(height: 10),
             Padding(
               padding: const EdgeInsets.all(12.0),
-              child: ElevatedButton.icon(
-                onPressed:
-                    (_currentPosition == null && _usingGps)
-                        ? null
-                        : (_isRunning ? _stopRun : _startRun),
-                icon: Icon(
-                  _isRunning ? Icons.stop : Icons.play_arrow,
-                  color: Colors.black,
-                ),
-                label: Text(
-                  _isRunning
-                      ? "STOP ${_activityInfo[_selectedActivity]!['label'].toUpperCase()}"
-                      : "START ${_activityInfo[_selectedActivity]!['label'].toUpperCase()}",
-                  style: const TextStyle(color: Colors.black),
-                ),
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 50),
-                  backgroundColor: _isRunning ? Colors.red : Colors.white,
-                ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: (_currentPosition == null && _usingGps)
+                          ? null
+                          : (_isRunning
+                              ? (_isPaused ? _resumeRun : _pauseRun)
+                              : _startRun),
+                      icon: Icon(
+                        _isRunning
+                            ? (_isPaused ? Icons.play_arrow : Icons.pause)
+                            : Icons.play_arrow,
+                        color: Colors.black,
+                      ),
+                      label: Text(
+                        _isRunning
+                            ? (_isPaused ? "RESUME" : "PAUSE")
+                            : "START ${_activityInfo[_selectedActivity]!['label'].toUpperCase()}",
+                        style: const TextStyle(color: Colors.black),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 50),
+                        backgroundColor: _isRunning
+                            ? (_isPaused ? Colors.green : Colors.orange)
+                            : Colors.white,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  if (_isRunning)
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: _stopRun,
+                        icon: const Icon(Icons.stop, color: Colors.white),
+                        label: const Text(
+                          "STOP",
+                          style: TextStyle(color: Colors.white),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(double.infinity, 50),
+                          backgroundColor: Colors.red,
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
           ],

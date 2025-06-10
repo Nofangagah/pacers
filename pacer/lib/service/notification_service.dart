@@ -56,4 +56,30 @@ class NotificationService {
       showLocal(message); // ✅ tampilkan notifikasi saat app dibuka
     });
   }
+
+  static Future<void> showNotification({
+    required String title,
+    required String body,
+  }) async {
+    const AndroidNotificationDetails androidNotificationDetails =
+        AndroidNotificationDetails(
+      'activity_channel',
+      'Activity Notifications',
+      channelDescription: 'Notifications for activity tracking',
+      importance: Importance.high,
+      priority: Priority.high,
+      ticker: 'ticker',
+    );
+    
+    const NotificationDetails notificationDetails = NotificationDetails(
+      android: androidNotificationDetails,
+    );
+    
+    await _local.show(
+      0,
+      title,
+      body,
+      notificationDetails,
+    );
+  }
 }

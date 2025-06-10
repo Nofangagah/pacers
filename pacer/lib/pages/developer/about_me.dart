@@ -7,7 +7,7 @@ class DataDiri extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Data Diri'),
+        title: const Text('About Me'),
         centerTitle: true,
         backgroundColor: Colors.black,
         elevation: 0,
@@ -51,7 +51,7 @@ class DataDiri extends StatelessWidget {
                     children: const [
                       Row(
                         children: [
-                          Icon(Icons.school, color: Colors.blue),
+                          Icon(Icons.school, color: Colors.white),
                           SizedBox(width: 10),
                           Text(
                             'Jurusan:',
@@ -64,14 +64,14 @@ class DataDiri extends StatelessWidget {
                       Divider(height: 25),
                       Row(
                         children: [
-                          Icon(Icons.cake, color: Colors.pink),
+                          Icon(Icons.cake, color: Colors.white),
                           SizedBox(width: 10),
                           Text(
                             'Tanggal Lahir:',
                             style: TextStyle(fontWeight: FontWeight.bold),
                           ),
                           SizedBox(width: 10),
-                          Text('1 Januari 2000'),
+                          Text('04 November 2003'),
                         ],
                       ),
                     ],

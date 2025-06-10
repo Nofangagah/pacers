@@ -367,18 +367,6 @@ class _ActivityDetailPageState extends State<ActivityDetailPage> {
                         '${widget.activity.path.length} coordinates',
                       ),
                     const SizedBox(height: 8),
-                    ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: Colors.black, 
-                        elevation: 2,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                      ),
-                      onPressed: () => {Navigator.pop(context)},
-                      child: const Text('Back'),
-                    ),
                   ],
                 ),
               ),

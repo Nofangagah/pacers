@@ -3,7 +3,7 @@ import sendNotification from '../service/sendNotification.js';
 import User from '../model/usersModel.js';
 import { Op } from 'sequelize';
 
-// Fungsi umum untuk kirim notifikasi
+
 const sendReminders = async (title, message) => {
   console.log(`🚀 Mengirim notifikasi: ${title}`);
 
@@ -28,18 +28,33 @@ const sendReminders = async (title, message) => {
 };
 
 const scheduleDailyReminder = () => {
+  // Notifikasi jam 7 pagi
   cron.schedule(
-  '*/1 * * * *', 
-  () => {
-    sendReminders(
-      'Notifikasi rutin tiap 1 menit',
-      'Ingat untuk tetap aktif dan catat aktivitasmu di PACER!'
-    );
-  },
-  {
-    timezone: 'Asia/Jakarta',
-  }
-);
+    '0 7 * * *',
+    () => {
+      sendReminders(
+        'Selamat Pagi!',
+        'Waktunya memulai hari dengan aktif! Jangan lupa catat aktivitasmu di PACER hari ini.'
+      );
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
+
+  // Notifikasi jam 4 sore
+  cron.schedule(
+    '0 16 * * *',
+    () => {
+      sendReminders(
+        'Selamat Sore!',
+        'Bagaimana aktivitasmu hari ini? Jangan lupa catat di PACER ya!'
+      );
+    },
+    {
+      timezone: 'Asia/Jakarta',
+    }
+  );
 };
 
 export default scheduleDailyReminder;

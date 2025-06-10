@@ -120,7 +120,7 @@ class _ActivityPageState extends State<ActivityPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Aktivitas Saya'),
+        title: const Text('My Activities'),
         centerTitle: true,
         automaticallyImplyLeading: false,
         iconTheme: IconThemeData(color: Colors.white), // AppBar icons
@@ -166,7 +166,7 @@ class _ActivityPageState extends State<ActivityPage> {
               if (activities.isEmpty) {
                 return const Center(
                   child: Text(
-                    'Belum ada aktivitas',
+                    'no activity yet',
                     style: TextStyle(color: Colors.white),
                   ),
                 );
@@ -197,7 +197,7 @@ class _ActivityPageState extends State<ActivityPage> {
                               style: TextStyle(color: Colors.white),
                             ),
                             content: const Text(
-                              "Apakah Anda yakin ingin menghapus aktivitas ini?",
+                              "Are you sure you want to delete this activity?",
                               style: TextStyle(color: Colors.white),
                             ),
                             actions: <Widget>[

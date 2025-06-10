@@ -54,7 +54,7 @@ static Future<List<ActivityModel>> saveActivity(ActivityModel activity) async {
    
      
 
-      if (response.statusCode == 201 || response.statusCode == 200) { // Menambahkan 200 sebagai kemungkinan sukses
+      if (response.statusCode == 201 || response.statusCode == 200) { 
         final responseData = jsonDecode(response.body); // Coba parse JSON
         print('CLIENT: Successfully parsed JSON response.');
 
