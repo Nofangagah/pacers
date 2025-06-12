@@ -11,6 +11,7 @@ class DataDiri extends StatelessWidget {
         centerTitle: true,
         backgroundColor: Colors.black,
         elevation: 0,
+        automaticallyImplyLeading: false,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),

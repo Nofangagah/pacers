@@ -10,6 +10,8 @@ import 'package:permission_handler/permission_handler.dart' as perm_handler;
 import 'package:pacer/service/activity_service.dart';
 import 'package:pacer/models/activity_model.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+import 'package:provider/provider.dart';  
+import 'package:pacer/pages/provider/activity_provider.dart';
 
 // Constants for configuration
 const double _locationUpdateIntervalMs = 1000; // milliseconds
@@ -219,6 +221,8 @@ class _RunningPageState extends State<RunningPage> {
       validateActivity(activityFinal);
       await ActivityService.saveActivity(activityFinal);
 
+      
+
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Activity saved successfully!")),
     );
@@ -227,6 +231,12 @@ class _RunningPageState extends State<RunningPage> {
       title: 'Activity Saved',
       body: '${activity.title} (${(_totalDistance/1000).toStringAsFixed(2)} km) was saved successfully',
     );
+
+    if(mounted && userId !=null) {
+      Provider.of<ActivityProvider>(context, listen: false).fetchActivities(userId);
+    }
+
+
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Failed to save: ${e.toString()}")),

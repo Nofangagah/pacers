@@ -17,6 +17,7 @@ class _LoginFormState extends State<LoginForm> {
   final TextEditingController _nameController = TextEditingController();
 
   bool _isLoading = false;
+  bool _obscureText = true; 
 
   void _submit() async {
     if (_formKey.currentState!.validate()) {
@@ -50,7 +51,7 @@ class _LoginFormState extends State<LoginForm> {
         if (result['success']) {
           if (widget.isRegister) {
             print('[LoginForm] Registration successful');
-            // Langsung pindah ke halaman login tanpa delay
+           
             Navigator.pushReplacementNamed(context, '/login');
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -95,7 +96,8 @@ class _LoginFormState extends State<LoginForm> {
     }
   }
 
-  InputDecoration _inputDecoration(String label) {
+  
+  InputDecoration _inputDecoration(String label, {Widget? suffixIcon}) {
     return InputDecoration(
       labelText: label,
       labelStyle: const TextStyle(color: Colors.white70),
@@ -107,8 +109,9 @@ class _LoginFormState extends State<LoginForm> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.tealAccent),
+        borderSide: const BorderSide(color: Colors.white),
       ),
+      suffixIcon: suffixIcon, 
     );
   }
 
@@ -144,8 +147,22 @@ class _LoginFormState extends State<LoginForm> {
             child: TextFormField(
               controller: _passwordController,
               style: const TextStyle(color: Colors.white),
-              obscureText: true,
-              decoration: _inputDecoration('Password'),
+              obscureText: _obscureText, 
+              decoration: _inputDecoration(
+                'Password',
+                
+                suffixIcon: IconButton(
+                  icon: Icon(
+                    _obscureText ? Icons.visibility_off : Icons.visibility,
+                    color: Colors.white70,
+                  ),
+                  onPressed: () {
+                    setState(() {
+                      _obscureText = !_obscureText; 
+                    });
+                  },
+                ),
+              ),
               validator:
                   (value) => value!.length < 6 ? 'Password too short' : null,
             ),

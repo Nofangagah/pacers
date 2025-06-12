@@ -11,9 +11,10 @@ import 'package:pacer/pages/homepage/set_weight.dart';
 import 'package:pacer/pages/profilePage/edit_profile_page.dart';
 import 'package:pacer/pages/profilePage/profile_page.dart';
 import 'package:pacer/pages/splashScreen/splash_screen.dart';
+import 'package:pacer/pages/provider/activity_provider.dart'; 
+import 'package:provider/provider.dart'; 
 
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-
 
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   await Firebase.initializeApp();
@@ -26,7 +27,17 @@ void main() async {
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
   timeago.setLocaleMessages('id', timeago.IdMessages());
 
-  runApp(const MyApp());
+  runApp(
+    
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => ActivityProvider()),
+       
+      ],
+      child: const MyApp(),
+    ),
+   
+  );
 
   // Tambahkan listener untuk navigasi dari notifikasi
   FirebaseMessaging.onMessageOpenedApp.listen((message) {
@@ -45,7 +56,6 @@ void main() async {
 void _handleNotificationNavigation(BuildContext context) async {
   final prefs = await SharedPreferences.getInstance();
   final accessToken = prefs.getString('accessToken');
- 
 
   if (accessToken != null && context.mounted) {
     Navigator.pushAndRemoveUntil(
@@ -68,7 +78,7 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      navigatorKey: navigatorKey, // penting untuk navigasi dari background
+      navigatorKey: navigatorKey, 
       theme: ThemeData(
         brightness: Brightness.dark,
         scaffoldBackgroundColor: Colors.black,
@@ -94,8 +104,6 @@ class MyApp extends StatelessWidget {
         '/edit-profile': (context) => const EditProfilePage(),
         '/home': (context) => const HomePage(),
         '/kesan-pesan': (context) => const KesanPesanPage(),
-    
-       
       },
       onGenerateRoute: (settings) {
         if (settings.name == '/set-weight') {

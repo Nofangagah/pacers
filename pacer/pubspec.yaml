@@ -30,6 +30,7 @@ dependencies:
   intl: ^0.20.2
   timezone: ^0.10.1
   sensors_plus: ^6.1.1
+  provider: ^6.1.5
 
 dev_dependencies:
   flutter_test:
